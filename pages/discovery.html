@@ -1,0 +1,581 @@
+<!doctype html>
+<!-- qom Descubrimiento — Motor de comportamiento y detección de TTPs.
+     Monitoreo continuo de entidades, triage IA con feedback supervisado,
+     cola HITL para el operador y replay forense reproducible L1/L2/L3.
+     Todo alimentado por /api/v1/ttp-discovery/* y /api/v1/detection/replay. -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom Descubrimiento TTP</title>
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --bg:#0b1420; --card:#152233; --card2:#1a2d42; --ink:#d7e3ef;
+  --dim:#7f95ab; --mut:#243447; --line:#243447; --acc:#4a7cb0; --acc2:#5a8fc0;
+  --warn:#c4a35a; --bad:#c07a7a; --info:#5a8fc0; --radius:4px; --radius-lg:6px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;font-size:13px}
+.wrap{max-width:1200px;margin:0 auto;padding:1.2rem}
+.top{display:flex;justify-content:space-between;align-items:baseline;
+  flex-wrap:wrap;gap:.8rem;margin-bottom:1rem}
+.brand{font-size:1.35rem;font-weight:700}
+.brand em{color:var(--acc);font-style:normal}
+.back{color:var(--acc);text-decoration:none;font-size:.8rem}
+.tabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem}
+.tab{background:var(--card);border:1px solid var(--mut);color:var(--dim);
+  padding:.45rem 1rem;border-radius:var(--radius-lg) var(--radius-lg) 0 0;cursor:pointer;
+  font-family:inherit;font-size:.8rem}
+.tab.on{color:var(--acc);border-color:var(--acc);border-bottom-color:var(--card)}
+.sec{background:var(--card);border:1px solid var(--mut);border-radius:0 var(--radius-lg) var(--radius-lg);
+  padding:1rem 1.2rem;margin-bottom:1.2rem;min-height:8rem}
+.sec h2{margin:.1rem 0 .6rem;font-size:1rem;color:var(--acc)}
+.hint{color:var(--dim);font-size:.72rem;margin-bottom:.8rem;line-height:1.5}
+.badge{display:inline-block;background:var(--card2);border:1px solid var(--mut);
+  padding:.12rem .45rem;border-radius:var(--radius);font-size:.65rem;color:var(--acc);
+  margin:.15rem .25rem .15rem 0;white-space:nowrap}
+.badge.warn{border-color:var(--warn);color:var(--warn)}
+.badge.bad{border-color:var(--bad);color:var(--bad)}
+.badge.dim{color:var(--dim)}
+.badge.blue{border-color:var(--acc2);color:var(--acc2)}
+.badge.purple{border-color:var(--muted,var(--dim));color:var(--muted,var(--dim))}
+table{width:100%;border-collapse:collapse;font-size:.75rem}
+th,td{padding:.4rem .5rem;border-bottom:1px solid var(--mut);text-align:left;vertical-align:top}
+th{color:var(--dim);font-weight:600;font-size:.66rem;text-transform:uppercase;
+  letter-spacing:.05em}
+tr.row-click{cursor:pointer}
+tr.row-click:hover{background:var(--card2)}
+.big{font-size:1.5rem;font-weight:700;color:var(--acc)}
+.big.warn{color:var(--warn)} .big.bad{color:var(--bad)}
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));
+  gap:.8rem;margin-bottom:.8rem}
+.kv .k{background:var(--card2);border:1px solid var(--mut);border-radius:var(--radius-lg);
+  padding:.6rem .8rem}
+.kv .k .lbl{color:var(--dim);font-size:.62rem;text-transform:uppercase;
+  letter-spacing:.05em}
+.kv .k .val{font-size:1rem;margin-top:.25rem}
+.err{color:var(--bad);font-size:.75rem;margin-top:.5rem}
+.btn{background:var(--card2);border:1px solid var(--acc);color:var(--acc);
+  padding:.35rem .8rem;border-radius:4px;font-family:inherit;font-size:.75rem;
+  cursor:pointer;margin-right:.4rem;margin-bottom:.4rem;display:inline-block}
+.btn:hover{background:var(--acc);color:var(--bg)}
+.btn.danger{border-color:var(--bad);color:var(--bad)}
+.btn.danger:hover{background:var(--bad);color:#fff}
+.btn.dim{border-color:var(--dim);color:var(--dim)}
+.btn.dim:hover{background:var(--dim);color:var(--bg)}
+.input-text{background:var(--bg);border:1px solid var(--mut);color:var(--ink);
+  padding:.4rem .6rem;border-radius:4px;font-family:inherit;font-size:.75rem;
+  margin-right:.4rem}
+.input-select{background:var(--bg);border:1px solid var(--mut);color:var(--ink);
+  padding:.35rem .6rem;border-radius:4px;font-family:inherit;font-size:.75rem;
+  margin-right:.4rem}
+.bar{background:var(--mut);border-radius:3px;height:8px;overflow:hidden}
+.bar>div{height:100%;background:var(--acc)}
+.bar>div.warn{background:var(--warn)} .bar>div.bad{background:var(--bad)}
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);
+  display:flex;align-items:center;justify-content:center;z-index:9000}
+.modal{background:var(--card);border:1px solid var(--acc);border-radius:var(--radius-lg);
+  max-width:800px;width:95%;max-height:85vh;overflow-y:auto;padding:1.4rem}
+.foot{margin-top:2rem;padding:1rem 0 .4rem;border-top:1px solid var(--mut);
+  color:var(--dim);font-size:.68rem;text-align:center;letter-spacing:.03em}
+</style>
+<link rel="stylesheet" href="/assets/ui-kit.css">
+<script src="/assets/ui-kit.js" nonce="__CSP_NONCE__"></script>
+</head>
+<body>
+<header>
+  <div class="mark">QT</div>
+  <h1>Descubrimiento TTP</h1>
+  <a class="back" href="/">← Live</a>
+</header>
+<div class="wrap">
+  <div id="uk-strip"></div>
+
+  <div class="tabs" id="tabs"></div>
+  <div id="view"></div>
+
+  <div class="foot">qom Defender OS · descubrimiento conductual determinista · supervisión HITL sellada</div>
+</div>
+
+<div id="modal-container"></div>
+
+<script nonce="__CSP_NONCE__">
+"use strict";
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function api(path,opts){
+  opts=opts||{};opts.credentials="same-origin";
+  if(opts.body&&typeof opts.body!=="string"){
+    opts.headers={"Content-Type":"application/json"};
+    opts.body=JSON.stringify(opts.body);
+  }
+  return fetch(path,opts).then(function(r){
+    return r.json().catch(function(){return{};}).then(function(j){
+      if(!r.ok){var e=new Error(j.error||j.message||("HTTP "+r.status));e.status=r.status;throw e;}
+      return j;
+    });
+  });
+}
+function fmtTs(x){return x?esc(String(x).replace("T"," ").slice(0,19)):"—";}
+
+var TABS=[
+  ["resumen","Estado y Engine"],
+  ["candidatos","Cola de Candidatos"],
+  ["desviaciones","Desviaciones (Deviations)"],
+  ["cobertura","Cobertura ATT&CK"],
+  ["replay","Forensic Replay"]
+];
+var CUR="resumen";
+
+function tabsHtml(){
+  document.getElementById("tabs").innerHTML=TABS.map(function(t){
+    return '<button class="tab'+(t[0]===CUR?" on":"")+'" data-t="'+t[0]+'">'+t[1]+'</button>';
+  }).join("");
+  document.querySelectorAll(".tab").forEach(function(b){
+    b.onclick=function(){CUR=b.dataset.t;render();};
+  });
+}
+
+function badgeVerdict(v){
+  if(!v) return '<span class="badge dim">sin triage</span>';
+  if(v==="likely_false_positive"||v==="LikelyFalsePositive")
+    return '<span class="badge warn">FP Probable</span>';
+  if(v==="suspicious"||v==="Suspicious")
+    return '<span class="badge bad">Sospechoso</span>';
+  return '<span class="badge blue">Revisar</span>';
+}
+
+function badgeStatus(s){
+  var map={pending:"blue",simulation:"purple",promoted:"badge",discarded:"dim"};
+  var cls=map[s]||"dim";
+  return '<span class="badge '+cls+'">'+esc(s)+'</span>';
+}
+
+// ---------- 1. Resumen / Estado ----------
+function vResumen(){
+  return api("/api/v1/ttp-discovery/status").then(function(st){
+    var e=st.engine||{};
+    var h='<section class="sec"><h2>Estado del Motor de Descubrimiento</h2>'+
+      '<div class="hint">Detección no supervisada de técnicas, tácticas y procedimientos (TTPs). '+
+      'Agrupamiento de ventanas (300s) mediante HDBSCAN y modelo de secuencia bigrama. '+
+      'La normalidad se aprende por entidad; la novedad se somete a gates y triage consultivo.</div>'+
+      '<div class="kv">'+
+        '<div class="k"><div class="lbl">entidades registradas</div><div class="val big">'+esc(e.entities_tracked||st.entities||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">baselines entrenados</div><div class="val big">'+esc(e.baselines_trained||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">observaciones totales</div><div class="val">'+esc(e.total_observations||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">candidatos totales</div><div class="val">'+esc(st.candidates_count||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">cuantil novedad</div><div class="val">'+esc(e.novelty_quantile||0.99)+'</div></div>'+
+        '<div class="k"><div class="lbl">factor umbral</div><div class="val">'+esc(e.threshold_factor||1.0)+'</div></div>'+
+        '<div class="k"><div class="lbl">gate de persistencia</div><div class="val">'+(st.persistence_gate!=null?st.persistence_gate+" ventanas":"K=2 activo")+'</div></div>'+
+        '<div class="k"><div class="lbl">gate de flota</div><div class="val">'+(st.fleet_gate!=null?st.fleet_gate+" entidades":"≥3 entidades")+'</div></div>'+
+      '</div>'+
+      '<div style="margin-top:1rem">'+
+        '<button class="btn" id="btn-retrain">Forzar Reentrenamiento de Baselines</button>'+
+        '<div id="retrain-res" class="hint" style="margin-top:.4rem"></div>'+
+      '</div></section>';
+    return h;
+  });
+}
+
+// ---------- 2. Candidatos TTP ----------
+var candFilterStatus="all";
+var candFilterVerdict="all";
+
+function vCandidatos(){
+  return api("/api/v1/ttp-discovery/candidates").then(function(res){
+    var items=res.candidates||res||[];
+    var filtered=items.filter(function(c){
+      if(candFilterStatus!=="all"&&c.status!==candFilterStatus) return false;
+      if(candFilterVerdict!=="all"){
+        var v=(c.ai_verdict||"").toLowerCase();
+        if(candFilterVerdict==="fp"&&v.indexOf("false")===-1) return false;
+        if(candFilterVerdict==="suspicious"&&v.indexOf("suspicious")===-1) return false;
+        if(candFilterVerdict==="review"&&v.indexOf("review")===-1&&v.indexOf("needs")===-1) return false;
+      }
+      return true;
+    });
+
+    var h='<section class="sec"><h2>Cola de Candidatos TTP (Supervisión Humana)</h2>'+
+      '<div class="hint">Patrones de comportamiento que superaron persistencia, flota y cooldown. '+
+      'El triage de IA ordena la cola; el operador decide promover a regla o descartar. '+
+      '<b>Descartar con aprendizaje (Feedback Loop)</b> enseña al baseline para extinguir la familia de variantes.</div>'+
+      '<div style="margin-bottom:1rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">'+
+        '<span>Estado:</span><select class="input-select" id="fil-status">'+
+          '<option value="all" '+(candFilterStatus==="all"?"selected":"")+'>Todos</option>'+
+          '<option value="pending" '+(candFilterStatus==="pending"?"selected":"")+'>Pendientes</option>'+
+          '<option value="simulation" '+(candFilterStatus==="simulation"?"selected":"")+'>En Simulación</option>'+
+          '<option value="promoted" '+(candFilterStatus==="promoted"?"selected":"")+'>Promovidos</option>'+
+          '<option value="discarded" '+(candFilterStatus==="discarded"?"selected":"")+'>Descartados</option>'+
+        '</select>'+
+        '<span>Triage IA:</span><select class="input-select" id="fil-verdict">'+
+          '<option value="all" '+(candFilterVerdict==="all"?"selected":"")+'>Todos</option>'+
+          '<option value="fp" '+(candFilterVerdict==="fp"?"selected":"")+'>FP Probable</option>'+
+          '<option value="suspicious" '+(candFilterVerdict==="suspicious"?"selected":"")+'>Sospechoso</option>'+
+          '<option value="review" '+(candFilterVerdict==="review"?"selected":"")+'>Requiere Revisión</option>'+
+        '</select>'+
+        '<span class="badge dim">'+filtered.length+' candidatos</span>'+
+      '</div>'+
+      '<table><thead><tr><th>ID</th><th>Descubierto</th><th>Entidad</th><th>Triage IA</th><th>Estado</th><th>Distancia</th><th>Acción</th></tr></thead><tbody>';
+
+    if(!filtered.length){
+      h+='<tr><td colspan="7" class="hint" style="text-align:center;padding:1.5rem">No hay candidatos que coincidan con los filtros seleccionados</td></tr>';
+    }
+    filtered.forEach(function(c){
+      var ent=(c.entities||[]).join(", ")||"—";
+      h+='<tr class="row-click" data-id="'+esc(c.id)+'">'+
+        '<td><b>'+esc(c.id)+'</b></td>'+
+        '<td>'+fmtTs(c.discovered_at)+'</td>'+
+        '<td>'+esc(ent)+'</td>'+
+        '<td>'+badgeVerdict(c.ai_verdict)+'</td>'+
+        '<td>'+badgeStatus(c.status)+'</td>'+
+        '<td>'+(c.dist_min!=null?c.dist_min.toFixed(2):"—")+'</td>'+
+        '<td><button class="btn" style="padding:.15rem .45rem;font-size:.68rem" data-view-id="'+esc(c.id)+'">Detalle / HITL</button></td>'+
+      '</tr>';
+    });
+    h+='</tbody></table></section>';
+    return h;
+  });
+}
+
+function openCandidateModal(id){
+  api("/api/v1/ttp-discovery/candidates/"+encodeURIComponent(id)).then(function(c){
+    var mc=document.getElementById("modal-container");
+    var zs=c.dim_zscores||{};
+    var exp=c.explained||{};
+    var ent=(c.entities||[]).join(", ")||"—";
+
+    var zRows=Object.keys(zs).map(function(k){
+      var val=zs[k];
+      var cls=val>=3?"badge bad":(val>=2?"badge warn":"badge dim");
+      var raw=exp[k]!=null?exp[k].toFixed(2):"—";
+      return '<tr><td><code>'+esc(k)+'</code></td><td>'+esc(raw)+'</td><td><span class="'+cls+'">'+val.toFixed(2)+'σ</span></td></tr>';
+    }).join("");
+
+    var h='<div class="modal-overlay" id="modal-overlay"><div class="modal">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">'+
+        '<h2 style="margin:0;color:var(--acc)">Candidato '+esc(c.id)+'</h2>'+
+        '<button class="btn dim" id="modal-close">✕ Cerrar</button>'+
+      '</div>'+
+      '<div class="kv">'+
+        '<div class="k"><div class="lbl">entidad</div><div class="val">'+esc(ent)+'</div></div>'+
+        '<div class="k"><div class="lbl">descubierto</div><div class="val">'+fmtTs(c.discovered_at)+'</div></div>'+
+        '<div class="k"><div class="lbl">estado</div><div class="val">'+badgeStatus(c.status)+'</div></div>'+
+        '<div class="k"><div class="lbl">triage ia</div><div class="val">'+badgeVerdict(c.ai_verdict)+'</div></div>'+
+        '<div class="k"><div class="lbl">distancia cluster</div><div class="val">'+(c.dist_min!=null?c.dist_min.toFixed(3):"—")+'</div></div>'+
+        '<div class="k"><div class="lbl">hash features</div><div class="val"><code style="font-size:.7rem">'+esc(c.features_hash||"—")+'</code></div></div>'+
+      '</div>'+
+      (c.description?'<div class="hint" style="background:var(--card2);padding:.6rem;border-radius:4px">'+esc(c.description)+'</div>':'')+
+      (c.ai_rationale?'<div style="margin:.8rem 0;padding:.6rem;background:var(--card2);border-left:3px solid var(--acc)"><b>Rationale IA:</b> '+esc(c.ai_rationale)+' <span class="badge dim">'+esc(c.ai_by||"ia")+'</span></div>':'')+
+      '<h3>Técnicas ATT&CK Cercanas (advisory)</h3>'+
+      (c.auto_classification?'<div class="hint">Clasificación IA: <b>'+esc(c.auto_classification)+'</b>'+
+        (c.auto_classification.indexOf("variant_of_")===0?' <span class="badge warn">probable variante</span>':'')+
+        (c.auto_classification.indexOf("llm_match_")===0?' <span class="badge warn">elección del LLM</span>':'')+
+        (c.auto_classification==="novel"?' <span class="badge dim">técnica potencialmente nueva</span>':'')+'</div>':'')+
+      (c.classification_rationale?'<div style="margin:.6rem 0;padding:.6rem;background:var(--card2);border-left:3px solid var(--acc)"><b>Rationale clasificación:</b> '+esc(c.classification_rationale)+' <span class="badge dim">llm rerank</span></div>':'')+
+      '<table><thead><tr><th>Técnica</th><th>Nombre</th><th>cosine dist</th></tr></thead><tbody>'+
+      ((c.nearest_techniques&&c.nearest_techniques.length?c.nearest_techniques.map(function(t){
+        return '<tr><td><code>'+esc(t.technique_id)+'</code></td><td>'+esc(t.name)+'</td><td>'+t.distance.toFixed(2)+'</td></tr>';
+      }).join(""):'<tr><td colspan="3" class="hint">sin clasificar aún — el worker la procesa en background o dispará "Re-clasificar ATT&CK"</td></tr>'))+
+      '</tbody></table>'+
+      '<h3>Desviación por Dimensión (z-scores vs baseline)</h3>'+
+      '<table><thead><tr><th>Dimensión</th><th>Valor observado</th><th>z-score</th></tr></thead><tbody>'+
+        (zRows||'<tr><td colspan="3" class="hint">sin z-scores disponibles</td></tr>')+
+      '</tbody></table>'+
+      '<div style="margin-top:1.2rem;border-top:1px solid var(--mut);padding-top:1rem">'+
+        '<h3 style="margin-top:0">Acciones de Operador (HITL)</h3>'+
+        '<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">'+
+          '<button class="btn" id="btn-promote">Promover a Regla</button>'+
+          '<button class="btn danger" id="btn-discard-learn">Descartar y Aprender (Feedback Loop)</button>'+
+          '<button class="btn dim" id="btn-discard-only">Descartar sin Aprender</button>'+
+          '<button class="btn dim" id="btn-retriage">Re-Triage IA</button>'+
+          '<button class="btn dim" id="btn-reclassify">Re-clasificar ATT&CK</button>'+
+          '<a class="btn dim" href="/api/v1/ttp-discovery/candidates/'+encodeURIComponent(c.id)+'/export" target="_blank">Exportar Evidencia JSON</a>'+
+        '</div>'+
+        '<div id="modal-action-msg" class="hint" style="margin-top:.6rem"></div>'+
+      '</div>'+
+    '</div></div>';
+
+    mc.innerHTML=h;
+    document.getElementById("modal-close").onclick=function(){mc.innerHTML="";};
+    document.getElementById("modal-overlay").onclick=function(e){if(e.target.id==="modal-overlay") mc.innerHTML="";};
+
+    document.getElementById("btn-promote").onclick=function(){
+      var rule=prompt("Nombre/ID de regla Sigma para vincular (opcional):", "SIGMA-"+c.id);
+      if(rule===null) return;
+      api("/api/v1/ttp-discovery/candidates/"+encodeURIComponent(c.id)+"/promote",{
+        method:"POST",
+        body:{rule_id:rule, reason:"Promovido por operador tras validación HITL"}
+      }).then(function(){
+        document.getElementById("modal-action-msg").innerHTML='<span style="color:var(--acc)">Promovido exitosamente a detección activa.</span>';
+        setTimeout(function(){mc.innerHTML="";render();}, 1200);
+      }).catch(function(e){
+        document.getElementById("modal-action-msg").innerHTML='<span class="err">Error: '+esc(e.message)+'</span>';
+      });
+    };
+
+    document.getElementById("btn-discard-learn").onclick=function(){
+      var reason=prompt("Motivo del descarte benigno:", "Actividad operativa legítima confirmada");
+      if(reason===null) return;
+      api("/api/v1/ttp-discovery/candidates/"+encodeURIComponent(c.id)+"/discard",{
+        method:"POST",
+        body:{reason:reason, learn:true}
+      }).then(function(){
+        document.getElementById("modal-action-msg").innerHTML='<span style="color:var(--acc)">Descartado. El patrón fue absorbido al baseline de la entidad (Feedback Loop activo).</span>';
+        setTimeout(function(){mc.innerHTML="";render();}, 1500);
+      }).catch(function(e){
+        document.getElementById("modal-action-msg").innerHTML='<span class="err">Error: '+esc(e.message)+'</span>';
+      });
+    };
+
+    document.getElementById("btn-discard-only").onclick=function(){
+      var reason=prompt("Motivo del descarte (sin enseñar al baseline):", "Falso positivo aislado");
+      if(reason===null) return;
+      api("/api/v1/ttp-discovery/candidates/"+encodeURIComponent(c.id)+"/discard",{
+        method:"POST",
+        body:{reason:reason, learn:false}
+      }).then(function(){
+        document.getElementById("modal-action-msg").innerHTML='<span style="color:var(--warn)">Descartado sin absorción al baseline.</span>';
+        setTimeout(function(){mc.innerHTML="";render();}, 1200);
+      }).catch(function(e){
+        document.getElementById("modal-action-msg").innerHTML='<span class="err">Error: '+esc(e.message)+'</span>';
+      });
+    };
+
+    document.getElementById("btn-retriage").onclick=function(){
+      document.getElementById("modal-action-msg").innerHTML='<span class="hint">Ejecutando re-triage con IA...</span>';
+      api("/api/v1/ttp-discovery/candidates/"+encodeURIComponent(c.id)+"/triage",{method:"POST"}).then(function(res){
+        document.getElementById("modal-action-msg").innerHTML='<span style="color:var(--acc)">Triage completado: '+esc(res.verdict||"ok")+'</span>';
+        setTimeout(function(){openCandidateModal(c.id);}, 1000);
+      }).catch(function(e){
+        document.getElementById("modal-action-msg").innerHTML='<span class="err">Error: '+esc(e.message)+'</span>';
+      });
+    };
+
+    document.getElementById("btn-reclassify").onclick=function(){
+      document.getElementById("modal-action-msg").innerHTML='<span class="hint">Clasificando contra ATT&CK (embeddings locales)...</span>';
+      api("/api/v1/ttp-discovery/candidates/"+encodeURIComponent(c.id)+"/classify",{method:"POST"}).then(function(res){
+        var v=res.verdict||{};
+        var lbl=v.kind==="variant_of"?("variante de "+v.technique_id+" ("+v.name+")"):(v.kind||"clasificado");
+        document.getElementById("modal-action-msg").innerHTML='<span style="color:var(--acc)">Clasificación: '+esc(lbl)+'</span>';
+        setTimeout(function(){openCandidateModal(c.id);}, 1200);
+      }).catch(function(e){
+        document.getElementById("modal-action-msg").innerHTML='<span class="err">Error: '+esc(e.message)+'</span>';
+      });
+    };
+  }).catch(function(e){alert("Error al cargar candidato: "+e.message);});
+}
+
+// ---------- 3. Desviaciones (Deviations) ----------
+function vDesviaciones(){
+  return api("/api/v1/ttp-discovery/deviations").then(function(res){
+    var items=res.deviations||res||[];
+    var h='<section class="sec"><h2>Desviaciones Conductuales Registradas</h2>'+
+      '<div class="hint">Evidencia inmutable de ventanas con anomalía estadística. '+
+      'Aunque un candidato sea suprimido por cooldown o racha de persistencia, la desviación '+
+      'queda preservada permanentemente en el store para peritaje judicial.</div>'+
+      '<table><thead><tr><th>Fecha / Ventana</th><th>Entidad</th><th>Eventos</th><th>Distancia Mreach</th><th>Hash Features</th></tr></thead><tbody>';
+    if(!items.length){
+      h+='<tr><td colspan="5" class="hint" style="text-align:center;padding:1.5rem">Sin desviaciones registradas</td></tr>';
+    }
+    items.slice(0, 100).forEach(function(d){
+      h+='<tr>'+
+        '<td>'+fmtTs(d.detected_at||d.window_start)+'</td>'+
+        '<td>'+esc(d.entity_id||d.entity)+'</td>'+
+        '<td>'+esc(d.events||0)+'</td>'+
+        '<td>'+(d.dist_min!=null?d.dist_min.toFixed(3):"—")+'</td>'+
+        '<td><code>'+esc(d.features_hash||"—")+'</code></td>'+
+      '</tr>';
+    });
+    h+='</tbody></table></section>';
+    return h;
+  });
+}
+
+// ---------- 4b. Cobertura ATT&CK por activo ----------
+function vCobertura(){
+  return api("/api/v1/discovery/attack-coverage").then(function(res){
+    var cov=res.coverage||{};
+    var hosts=cov.hosts||[];
+    var h='<section class="sec"><h2>Cobertura ATT&CK por Activo</h2>'+
+      '<div class="hint">Cruzamiento <b>advisory</b>: cada servicio descubierto proyecta una '+
+      'superficie de ataque (técnicas que explotan ese servicio). '+
+      '<b>Cubiertas</b> = existe una regla activa del SIEM con tag <code>attack.tXXXX</code>. '+
+      '<b>Gaps</b> = superficie proyectada sin regla — orienta al analista dónde '+
+      'crear detección, no es un veredicto de brecha.</div>'+
+      '<div class="kv" style="margin-top:.6rem">'+
+        '<div class="k"><div class="lbl">superficie proyectada</div><div class="val">'+esc(cov.total_surface||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">con regla activa</div><div class="val">'+esc(cov.total_covered||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">gaps distintos</div><div class="val '+(cov.total_gaps?"bad":"")+'">'+esc(cov.total_gaps||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">hosts con gaps</div><div class="val '+(cov.hosts_with_gaps?"warn":"")+'">'+esc(cov.hosts_with_gaps||0)+'</div></div>'+
+      '</div></section>';
+    if(!hosts.length){
+      return h+'<section class="sec"><div class="hint">Sin hosts en el inventario '+
+        '(corré un scan desde Discovery de red, o esperá observación pasiva).</div></section>';
+    }
+    hosts.forEach(function(a){
+      var tech=a.surface||[];
+      var svcs={};
+      tech.forEach(function(t){svcs[t.via_service+":"+t.port]=1;});
+      var svcsStr=Object.keys(svcs).map(esc).join(", ");
+      var covered=(a.covered_ids||[]).length;
+      h+='<section class="sec"><h2>'+esc(a.ip||"?")+
+        (a.hostname?' <span class="dim" style="font-weight:400">'+esc(a.hostname)+'</span>':'')+
+        ' <span class="badge '+((a.gap_ids||[]).length?"warn":"")+'" style="float:right">'+
+        'score '+(a.score!=null?a.score.toFixed(2):"—")+' · '+covered+'/'+tech.length+' cubiertas</span></h2>'+
+        (svcsStr?'<div class="hint" style="margin-bottom:.5rem">Servicios: '+svcsStr+'</div>':'')+
+        '<table><thead><tr><th>Técnica</th><th>Nombre</th><th>Vía</th><th>Cobertura</th></tr></thead><tbody>';
+      tech.forEach(function(t){
+        h+='<tr>'+
+          '<td><code'+(t.covered?"":" class=\"bad\"")+'>'+esc(t.technique_id)+'</code></td>'+
+          '<td>'+esc(t.name)+'</td>'+
+          '<td class="dim">'+esc(t.via_service)+':'+esc(t.port)+'</td>'+
+          '<td>'+(t.covered?'<span class="badge">regla activa</span>':'<span class="badge warn">sin regla</span>')+'</td>'+
+        '</tr>';
+      });
+      h+='</tbody></table></section>';
+    });
+    return h;
+  });
+}
+
+// ---------- 5. Forensic Replay (L1 / L2 / L3) ----------
+function vReplay(){
+  var today=new Date().toISOString().slice(0,10);
+  var h='<section class="sec"><h2>Forensic Replay (Reproducibilidad Judicial)</h2>'+
+    '<div class="hint">Re-ejecución determinista de decisiones pasadas sobre telemetría archivada. '+
+    'Permite a un auditor externo o perito judicial verificar si la decisión del motor '+
+    'coincide exactamente con la ejecución original bit-a-bit.</div>'+
+    '<div class="kv" style="grid-template-columns:1fr 1fr 1fr;align-items:end">'+
+      '<div class="k"><div class="lbl">Día a Re-ejecutar</div>'+
+        '<input type="date" class="input-text" id="rep-day" value="'+today+'" style="width:100%;margin-top:.4rem">'+
+      '</div>'+
+      '<div class="k"><div class="lbl">Nivel de Fidelidad</div>'+
+        '<select class="input-select" id="rep-kind" style="width:100%;margin-top:.4rem">'+
+          '<option value="full" selected>L3 — State-Aware (Snapshot de Baseline + Gates)</option>'+
+          '<option value="behavior">L2 — Behavior (Features archivadas vs Baseline Vigente)</option>'+
+          '<option value="sigma">L1 — Reglas Sigma (Texto archivado truncado)</option>'+
+        '</select>'+
+      '</div>'+
+      '<div class="k" style="background:transparent;border:none;padding:0">'+
+        '<button class="btn" id="btn-run-replay" style="padding:.6rem 1.2rem;font-size:.85rem;width:100%">Ejecutar Replay</button>'+
+      '</div>'+
+    '</div>'+
+    '<div id="replay-output" style="margin-top:1rem"></div>'+
+  '</section>';
+  return Promise.resolve(h);
+}
+
+function runReplay(){
+  var day=document.getElementById("rep-day").value;
+  var kind=document.getElementById("rep-kind").value;
+  var out=document.getElementById("replay-output");
+  out.innerHTML='<div class="hint">Ejecutando replay forense para '+esc(day)+' ('+esc(kind)+')... esto puede tardar unos segundos.</div>';
+
+  api("/api/v1/detection/replay",{
+    method:"POST",
+    body:{day:day, kind:kind, limit:50000}
+  }).then(function(rep){
+    var isEquiv=rep.decision_equivalent===true;
+    var badgeEquiv=isEquiv?'<span class="badge" style="font-size:.85rem">✓ DECISIÓN IDÉNTICA (BIT-EXACTO)</span>':
+      '<span class="badge bad" style="font-size:.85rem">DIVERGENCIA DECLARADA</span>';
+
+    var diff=rep.diff||{};
+    var missing=(diff.missing_in_replay||[]).length;
+    var extra=(diff.extra_in_replay||[]).length;
+
+    var h='<div style="background:var(--card2);border:1px solid var(--mut);padding:1rem;border-radius:6px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">'+
+        '<b>Reporte de Replay: '+esc(rep.schema||"qomdefender.replay")+'</b>'+
+        badgeEquiv+
+      '</div>'+
+      '<div class="kv">'+
+        '<div class="k"><div class="lbl">ventanas evaluadas</div><div class="val">'+esc(rep.windows_replayed||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">candidatos originales</div><div class="val">'+esc(rep.candidates_original||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">candidatos replay</div><div class="val">'+esc(rep.candidates_produced||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">intervenciones</div><div class="val">'+esc(rep.interventions_applied||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">snapshot usado</div><div class="val" style="font-size:.75rem">'+esc(rep.baseline_snapshot||"no requerido")+'</div></div>'+
+        '<div class="k"><div class="lbl">discrepancias (diff)</div><div class="val '+(missing||extra?"bad":"")+'">faltantes: '+missing+', extras: '+extra+'</div></div>'+
+      '</div>';
+
+    if(rep.warnings&&rep.warnings.length){
+      h+='<div style="margin-top:.8rem"><div class="lbl" style="color:var(--warn)">Advertencias de Replay:</div>';
+      rep.warnings.forEach(function(w){h+='<div class="hint" style="color:var(--warn)">⚠ '+esc(w)+'</div>';});
+      h+='</div>';
+    }
+
+    h+='<div style="margin-top:.8rem;font-size:.7rem;color:var(--dim)">Sellado en evidencia como <code>discovery_replay</code> con <code>live:false</code>.</div></div>';
+    out.innerHTML=h;
+  }).catch(function(e){
+    out.innerHTML='<div class="err">Fallo en replay: '+esc(e.message)+'<br><span class="hint">Verifique que existan archivos en <code>replay/windows-'+esc(day)+'.jsonl</code>.</span></div>';
+  });
+}
+
+function attachEvents(){
+  var bRetrain=document.getElementById("btn-retrain");
+  if(bRetrain){
+    bRetrain.onclick=function(){
+      var out=document.getElementById("retrain-res");
+      out.innerHTML="Recomputando baselines...";
+      api("/api/v1/ttp-discovery/retrain",{method:"POST"}).then(function(res){
+        out.innerHTML='<span style="color:var(--acc)">Completado: '+esc(res.message||"baselines recalculados con éxito")+'</span>';
+        setTimeout(render, 1000);
+      }).catch(function(e){
+        out.innerHTML='<span class="err">Error: '+esc(e.message)+'</span>';
+      });
+    };
+  }
+
+  var filS=document.getElementById("fil-status");
+  if(filS){
+    filS.onchange=function(){candFilterStatus=filS.value;render();};
+  }
+  var filV=document.getElementById("fil-verdict");
+  if(filV){
+    filV.onchange=function(){candFilterVerdict=filV.value;render();};
+  }
+
+  document.querySelectorAll("button[data-view-id]").forEach(function(btn){
+    btn.onclick=function(e){
+      e.stopPropagation();
+      openCandidateModal(btn.dataset.viewId);
+    };
+  });
+
+  document.querySelectorAll("tr.row-click").forEach(function(tr){
+    tr.onclick=function(){
+      if(tr.dataset.id) openCandidateModal(tr.dataset.id);
+    };
+  });
+
+  var bRunRep=document.getElementById("btn-run-replay");
+  if(bRunRep){
+    bRunRep.onclick=runReplay;
+  }
+}
+
+function render(){
+  tabsHtml();
+  var v=document.getElementById("view");
+  v.innerHTML='<div class="hint">Cargando datos...</div>';
+  var p=CUR==="resumen"?vResumen():
+        CUR==="candidatos"?vCandidatos():
+        CUR==="desviaciones"?vDesviaciones():
+        CUR==="cobertura"?vCobertura():
+        vReplay();
+  p.then(function(h){
+    v.innerHTML=h;
+    attachEvents();
+  }).catch(function(e){
+    v.innerHTML='<section class="sec"><h2>Error</h2><div class="err">'+esc(e.message)+'</div></section>';
+  });
+}
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,420 @@
+<!doctype html>
+<!-- qom Share — onboarding en ~10 minutos.
+
+     Asistente de 5 pasos sobre /api/v1/share/wizard/*:
+       bienvenida → disco → red → carpetas → usuarios → ejecutar.
+
+     Honestidad: todo lo que se ve viene de la API real. Si el
+     disco elegido es físico, el provisionado (LUKS2/btrfs/montaje)
+     queda pendiente del helper privilegiado — se dice en el paso
+     final, no se simula. Las credenciales generadas se muestran
+     una sola vez y se encolan como email de bienvenida (si el
+     servidor de correo local no está configurado, quedan
+     pendientes en la cola — también se dice). -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom Share — configuración inicial</title>
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/assets/ui-kit.css">
+<style>
+:root{
+  --bg:#0b1420; --card:#152233; --card2:#1a2d42; --ink:#d7e3ef;
+  --dim:#7f95ab; --mut:#243447; --acc:#4a7cb0; --warn:#c4a35a; --bad:#c07a7a;
+  --ok:#6aa88a; --bright:#eef4fa;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;font-size:13px}
+.wrap{max-width:860px;margin:0 auto;padding:1.2rem}
+.top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:1rem}
+.brand{font-size:1.35rem;font-weight:700}
+.brand em{color:var(--acc);font-style:normal}
+.back{color:var(--acc);text-decoration:none;font-size:.8rem}
+.steps{display:flex;gap:.4rem;margin-bottom:1.2rem;flex-wrap:wrap}
+.steps span{font-size:.62rem;padding:.15rem .6rem;border-radius:10px;
+  border:1px solid var(--mut);color:var(--dim);background:var(--card)}
+.steps span.on{border-color:var(--acc);color:var(--acc)}
+.card{background:var(--card);border:1px solid var(--mut);border-radius:8px;
+  padding:1.1rem 1.3rem;margin-bottom:1rem}
+.card h2{font-size:.95rem;margin:.1rem 0 .7rem;color:var(--acc)}
+.card p{font-size:.78rem;color:var(--ink);line-height:1.55}
+.card .dim{color:var(--dim);font-size:.72rem;line-height:1.5}
+label{display:block;font-size:.7rem;color:var(--dim);margin:.5rem 0 .2rem}
+input,select,textarea{background:var(--card2);border:1px solid var(--mut);
+  color:var(--ink);padding:.4rem .6rem;border-radius:5px;font-family:inherit;
+  font-size:.75rem;width:100%}
+button{background:var(--card2);border:1px solid var(--mut);color:var(--acc);
+  padding:.45rem 1rem;border-radius:5px;cursor:pointer;font-family:inherit;font-size:.75rem}
+button:hover{border-color:var(--acc)}
+button.primary{color:var(--ok);border-color:var(--ok)}
+button:disabled{opacity:.4;cursor:default}
+.row{display:flex;gap:.6rem;flex-wrap:wrap}
+.row>*{flex:1;min-width:120px}
+.pick{border:1px solid var(--mut);border-radius:6px;padding:.6rem .8rem;
+  margin:.4rem 0;cursor:pointer;font-size:.75rem;background:var(--card2)}
+.pick:hover{border-color:var(--acc)}
+.pick.sel{border-color:var(--ok)}
+.pick .meta{color:var(--dim);font-size:.65rem;margin-top:.2rem}
+ul.plain{margin:.3rem 0;padding-left:1.2rem;font-size:.75rem;color:var(--ink)}
+.err{color:var(--bad);font-size:.75rem;padding:.5rem 0;white-space:pre-wrap}
+.warn{color:var(--warn);font-size:.72rem}
+.ok{color:var(--ok);font-size:.75rem}
+table{width:100%;border-collapse:collapse;font-size:.72rem;margin:.4rem 0}
+td,th{padding:.3rem .5rem;border-bottom:1px solid var(--mut);text-align:left}
+th{color:var(--dim);font-size:.62rem;text-transform:uppercase}
+code{background:var(--card2);padding:.1rem .35rem;border-radius:4px;font-size:.7rem}
+.cred{font-size:.8rem;color:var(--ok);word-break:break-all}
+.hidden{display:none}
+pre.ruleset{background:var(--card2);border:1px solid var(--mut);border-radius:6px;
+  padding:.7rem;font-size:.68rem;overflow-x:auto;white-space:pre}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand">qom <em>Share</em> — configuración inicial</div>
+    <a class="back" href="/share/">← share</a>
+  </div>
+
+  <div class="steps" id="steps"></div>
+
+  <!-- Paso 0: bienvenida -->
+  <div class="card" id="s0">
+    <h2>Bienvenido a QOM Share</h2>
+    <p>QOM Share es el espacio de archivos compartido de tu organización,
+    servido por este appliance y accesible <b>solo desde la red interna</b>.
+    Este asistente lo deja funcionando en unos <b>8–10 minutos</b>,
+    sin conocimientos técnicos.</p>
+    <p>En los próximos 5 pasos vas a:</p>
+    <ul class="plain">
+      <li>Elegir el disco donde viven los archivos (se cifra con LUKS2).</li>
+      <li>Definir desde qué redes internas se puede acceder.</li>
+      <li>Crear la estructura de carpetas inicial.</li>
+      <li>Dar de alta a los usuarios — cada uno recibe sus credenciales por email.</li>
+      <li>Revisar todo y activar el servicio.</li>
+    </ul>
+    <p class="dim">Los archivos borrados pasan a una papelera protegida y cada
+    operación queda registrada en la cadena de evidencia del appliance.</p>
+    <button class="primary" type="button" data-go="1">Comenzar →</button>
+  </div>
+
+  <!-- Paso 1: disco -->
+  <div class="card hidden" id="s1">
+    <h2>Paso 1 de 5 — disco de almacenamiento</h2>
+    <p class="dim">Elegí el disco dedicado a los archivos. Recomendado:
+    ~100 GB por usuario, preferentemente SSD. El disco seleccionado se
+    cifra con LUKS2 durante el aprovisionamiento.</p>
+    <div id="disks">cargando…</div>
+    <label><input type="checkbox" id="useExisting" style="width:auto">
+      usar el filesystem actual (sin disco dedicado)</label>
+    <div class="err" id="e1"></div>
+    <div class="row" style="margin-top:.8rem">
+      <button type="button" data-go="0">← atrás</button>
+      <button class="primary" type="button" data-act="stepDisk">continuar →</button>
+    </div>
+  </div>
+
+  <!-- Paso 2: red -->
+  <div class="card hidden" id="s2">
+    <h2>Paso 2 de 5 — acceso de red</h2>
+    <p class="dim">QOM Share solo escucha en la intranet. Detectamos las
+    interfaces locales y sugerimos la configuración — revísala antes de
+    continuar.</p>
+    <div id="netsug"></div>
+    <div class="row">
+      <div><label>interfaz</label><input id="bindIface" value="eth0"></div>
+      <div><label>IP del servicio (bind)</label><input id="bindAddr"></div>
+    </div>
+    <label>redes autorizadas (una CIDR por línea)</label>
+    <textarea id="allowNets" rows="4"></textarea>
+    <div class="err" id="e2"></div>
+    <div class="row" style="margin-top:.8rem">
+      <button type="button" data-go="1">← atrás</button>
+      <button class="primary" type="button" data-act="stepNet">continuar →</button>
+    </div>
+  </div>
+
+  <!-- Paso 3: carpetas -->
+  <div class="card hidden" id="s3">
+    <h2>Paso 3 de 5 — estructura de carpetas</h2>
+    <p class="dim">Elegí una plantilla según el tipo de organización — las
+    carpetas se crean al finalizar.</p>
+    <label>plantilla</label>
+    <select id="tpl">
+      <option value="estudio_juridico">Estudio jurídico — Expedientes, Clientes, Contratos…</option>
+      <option value="financiera">Financiera — Clientes, Operaciones, Contabilidad…</option>
+      <option value="diseno">Diseño — Proyectos, Assets, Entregas…</option>
+      <option value="personalizada">Personalizada — sin carpetas predefinidas</option>
+    </select>
+    <label>días de retención en la papelera (1–365)</label>
+    <input id="retention" type="number" value="30" min="1" max="365">
+    <div class="err" id="e3"></div>
+    <div class="row" style="margin-top:.8rem">
+      <button type="button" data-go="2">← atrás</button>
+      <button class="primary" type="button" data-act="stepStorage">continuar →</button>
+    </div>
+  </div>
+
+  <!-- Paso 4: usuarios -->
+  <div class="card hidden" id="s4">
+    <h2>Paso 4 de 5 — usuarios</h2>
+    <p class="dim">Dá de alta a quienes van a usar el share. Se necesita al
+    menos un <b>admin</b>. El usuario <b>qomdefender</b> usa la contraseña
+    inicial <code>argentina2026</code>; el resto recibe una clave generada
+    (y email si declarás dirección). El admin puede cambiarlas después en
+    Share · usuarios.</p>
+    <div id="userRows"></div>
+    <button type="button" data-act="addUser" style="margin:.4rem 0">+ agregar usuario</button>
+    <div class="err" id="e4"></div>
+    <div class="row" style="margin-top:.8rem">
+      <button type="button" data-go="3">← atrás</button>
+      <button class="primary" type="button" data-act="stepUsers">continuar →</button>
+    </div>
+  </div>
+
+  <!-- Paso 5: revisar y ejecutar -->
+  <div class="card hidden" id="s5">
+    <h2>Paso 5 de 5 — revisar y activar</h2>
+    <div id="review"></div>
+    <div class="err" id="e5"></div>
+    <div class="row" style="margin-top:.8rem">
+      <button type="button" data-go="4">← atrás</button>
+      <button class="primary" id="btnExec" type="button" data-act="stepExec">activar QOM Share →</button>
+    </div>
+  </div>
+
+  <!-- Final -->
+  <div class="card hidden" id="sDone">
+    <h2>QOM Share activo</h2>
+    <div id="doneDetail"></div>
+    <h2 style="margin-top:1rem">Credenciales generadas</h2>
+    <p class="warn">Estas contraseñas se muestran una sola vez — también se
+    enviaron por email a cada usuario con dirección declarada.</p>
+    <div id="creds"></div>
+    <h2 style="margin-top:1rem">Reglas de firewall sugeridas</h2>
+    <p class="dim">Un helper privilegiado las aplica en el appliance
+    (<code>nft -f</code>):</p>
+    <pre class="ruleset" id="nft"></pre>
+    <a class="back" href="/share/" style="font-size:.85rem">ir al share →</a>
+  </div>
+</div>
+
+<script nonce="__CSP_NONCE__">
+let cur = 0;
+const ST = { device:null, wiz:null, users:[] };
+
+
+/* CSP_DELEGATE: sin on*= — CSP script-src nonce */
+document.addEventListener('click', (ev) => {
+  const t = ev.target.closest('[data-go],[data-act]');
+  if (!t) return;
+  if (t.hasAttribute('data-go')) { go(+t.getAttribute('data-go')); return; }
+  const act = t.getAttribute('data-act');
+  if (act === 'stepDisk') stepDisk();
+  else if (act === 'stepNet') stepNet();
+  else if (act === 'stepStorage') stepStorage();
+  else if (act === 'stepUsers') stepUsers();
+  else if (act === 'stepExec') stepExec();
+  else if (act === 'addUser') addUser();
+  else if (act === 'pickDisk') pickDisk(t);
+  else if (act === 'rmUser') {
+    const i = +t.getAttribute('data-user-i');
+    ST.users.splice(i, 1); renderUsers();
+  }
+});
+document.addEventListener('input', (ev) => {
+  const el = ev.target;
+  if (!el.hasAttribute('data-user-i') || !el.hasAttribute('data-field')) return;
+  const i = +el.getAttribute('data-user-i');
+  const f = el.getAttribute('data-field');
+  if (!ST.users[i]) return;
+  ST.users[i][f] = f === 'quota_gb' ? +el.value : el.value;
+});
+document.addEventListener('change', (ev) => {
+  const el = ev.target;
+  if (!el.hasAttribute('data-user-i') || el.getAttribute('data-field') !== 'role') return;
+  const i = +el.getAttribute('data-user-i');
+  if (ST.users[i]) ST.users[i].role = el.value;
+});
+
+function go(n){
+  cur = n;
+  for(const id of ['s0','s1','s2','s3','s4','s5','sDone'])
+    document.getElementById(id).classList.add('hidden');
+  document.getElementById(n===6?'sDone':'s'+n).classList.remove('hidden');
+  const names=['inicio','disco','red','carpetas','usuarios','activar'];
+  document.getElementById('steps').innerHTML =
+    names.map((s,i)=>`<span class="${i===n?'on':''}">${i+1}. ${s}</span>`).join('');
+  if(n===1) loadDisks();
+  if(n===2) loadNet();
+  if(n===4 && !ST.users.length) addUser('qomdefender','QOM Defender Share','admin');
+  if(n===5) review();
+}
+
+async function api(path, body){
+  const r = await fetch(path, {method:'POST', credentials:'same-origin',
+    headers:{'content-type':'application/json'},
+    body: JSON.stringify(body||{})});
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error || j.detail || ('HTTP '+r.status));
+  return j;
+}
+function err(id,e){ document.getElementById(id).textContent = e.message||e; }
+
+async function loadDisks(){
+  const el = document.getElementById('disks');
+  try{
+    const r = await fetch('/api/v1/share/wizard/disks', { credentials: 'same-origin' });
+    const j = await r.json();
+    if(!j.disks || !j.disks.length){
+      el.innerHTML = '<p class="dim">No se detectaron discos adicionales — el share usará el filesystem actual.</p>';
+      document.getElementById('useExisting').checked = true;
+      return;
+    }
+    el.innerHTML = j.disks.map(d=>{
+      const gb = (d.size_bytes/1073741824).toFixed(0);
+      const sel = d.device===j.auto_select;
+      return `<div class="pick${sel?' sel':''}" data-dev="${d.device}" data-act="pickDisk">
+        <b>${d.device}</b> — ${d.model||'disco'} — ${gb} GB
+        <div class="meta">SMART: ${d.smart_ok===null?'n/d':(d.smart_ok?'ok':'FALLA')}
+          ${d.mounted?'· montado (no apto)':''}
+          ${d.size_bytes<j.min_bytes?'· menor al mínimo recomendado':''}</div></div>`;
+    }).join('');
+    if(j.auto_select) ST.device = j.auto_select;
+  }catch(e){ el.innerHTML = '<p class="err">'+e+'</p>'; }
+}
+function pickDisk(el){
+  document.querySelectorAll('#disks .pick').forEach(x=>x.classList.remove('sel'));
+  el.classList.add('sel');
+  ST.device = el.dataset.dev;
+  document.getElementById('useExisting').checked = false;
+}
+
+async function stepDisk(){
+  document.getElementById('e1').textContent='';
+  const dev = document.getElementById('useExisting').checked ? 'existing' : ST.device;
+  if(!dev){ err('e1','elegí un disco o marcá "usar el filesystem actual"'); return; }
+  try{
+    const j = await api('/api/v1/share/wizard/start',{device:dev});
+    ST.wiz = j.wizard; go(2);
+  }catch(e){ err('e1',e); }
+}
+
+async function loadNet(){
+  const el = document.getElementById('netsug');
+  try{
+    const r = await fetch('/api/v1/share/wizard/network', { credentials: 'same-origin' });
+    const j = await r.json();
+    if(j.suggestions && j.suggestions.length){
+      const s = j.suggestions[0];
+      el.innerHTML = '<p class="dim">detectado: <code>'+s.iface+' '+s.address+'/'+s.prefix+'</code> — sugerencia aplicada abajo.</p>';
+      document.getElementById('bindIface').value = s.iface;
+      document.getElementById('bindAddr').value = s.address;
+      document.getElementById('allowNets').value = s.network;
+    }else{
+      el.innerHTML = '<p class="warn">No se detectaron interfaces con IP privada — completá los valores a mano (solo IPs privadas: 10.x, 172.16-31.x, 192.168.x).</p>';
+    }
+  }catch(e){ el.innerHTML = '<p class="dim">detección no disponible: '+e+'</p>'; }
+}
+
+async function stepNet(){
+  document.getElementById('e2').textContent='';
+  const nets = document.getElementById('allowNets').value
+    .split('\n').map(s=>s.trim()).filter(Boolean);
+  try{
+    const j = await api('/api/v1/share/wizard/network',{
+      bind_interface: document.getElementById('bindIface').value.trim(),
+      bind_address: document.getElementById('bindAddr').value.trim(),
+      allowed_networks: nets});
+    ST.wiz = j.wizard; go(3);
+  }catch(e){ err('e2',e); }
+}
+
+async function stepStorage(){
+  document.getElementById('e3').textContent='';
+  try{
+    const j = await api('/api/v1/share/wizard/storage',{
+      template: document.getElementById('tpl').value,
+      retention_days: +document.getElementById('retention').value});
+    ST.wiz = j.wizard; go(4);
+  }catch(e){ err('e3',e); }
+}
+
+function addUser(u,d,r){
+  ST.users.push({username:u||'',display_name:d||'',role:r||'editor',email:'',quota_gb:100});
+  renderUsers();
+}
+function renderUsers(){
+  const el = document.getElementById('userRows');
+  el.innerHTML = ST.users.map((u,i)=>`<div class="row" style="margin-bottom:.4rem">
+    <input placeholder="usuario" value="${u.username}" data-user-i="${i}" data-field="username">
+    <input placeholder="nombre" value="${u.display_name}" data-user-i="${i}" data-field="display_name">
+    <input placeholder="email" value="${u.email}" data-user-i="${i}" data-field="email">
+    <select data-user-i="${i}" data-field="role">
+      ${['admin','editor','viewer'].map(r=>`<option ${u.role===r?'selected':''}>${r}</option>`).join('')}
+    </select>
+    <input type="number" title="cuota GB" value="${u.quota_gb}" data-user-i="${i}" data-field="quota_gb">
+    <button type="button" data-act="rmUser" data-user-i="${i}">×</button>
+  </div>`).join('');
+}
+
+async function stepUsers(){
+  document.getElementById('e4').textContent='';
+  const users = ST.users.filter(u=>u.username).map(u=>({
+    username:u.username.trim(), display_name:u.display_name.trim()||u.username.trim(),
+    email:u.email.trim()||null, role:u.role,
+    quota_bytes:u.quota_gb*1073741824}));
+  try{
+    const j = await api('/api/v1/share/wizard/users',{users});
+    ST.wiz = j.wizard; go(5);
+  }catch(e){ err('e4',e); }
+}
+
+function review(){
+  const c = ST.wiz && ST.wiz.config;
+  document.getElementById('review').innerHTML = c ? `<table>
+    <tr><th>disco</th><td>${ST.device==='existing'?'filesystem actual':ST.device} (cifrado LUKS2 pendiente del aprovisionamiento)</td></tr>
+    <tr><th>bind</th><td>${c.bind_address} @ ${c.bind_interface||'-'}</td></tr>
+    <tr><th>redes autorizadas</th><td>${(c.allowed_networks||[]).join(', ')}</td></tr>
+    <tr><th>plantilla</th><td>${c.template||'-'}</td></tr>
+    <tr><th>retención papelera</th><td>${c.retention_days} días</td></tr>
+    <tr><th>usuarios</th><td>${(c.users||[]).map(u=>u.username+' ('+u.role+')').join(', ')}</td></tr>
+  </table>` : '<p class="warn">sin datos</p>';
+}
+
+async function stepExec(){
+  document.getElementById('e5').textContent='';
+  document.getElementById('btnExec').disabled = true;
+  try{
+    const j = await api('/api/v1/share/wizard/execute',{});
+    document.getElementById('doneDetail').innerHTML =
+      `<p class="ok">${j.note||''}</p>
+       <p class="dim">acciones: ${(j.applied&&j.applied.actions||[]).join(' · ')}</p>`;
+    document.getElementById('creds').innerHTML =
+      (j.welcome||[]).map(w=>`<div class="cred">${w.username}: <code>${w.password}</code>
+        ${w.email?'→ '+w.email:''}</div>`).join('') || '<p class="dim">sin credenciales nuevas</p>';
+    const mails = (j.welcome_mail||[]).map(m=>`${m.username}: ${m.mail}`).join(', ');
+    if(mails) document.getElementById('creds').innerHTML +=
+      `<p class="dim">emails: ${mails} — "pending/queued" en la cola local si SMTP no está configurado.</p>`;
+    try{
+      const r = await fetch('/api/v1/share/nft?iface='+encodeURIComponent(
+        (ST.wiz.config&&ST.wiz.config.bind_interface)||'eth0'));
+      const n = await r.json();
+      document.getElementById('nft').textContent = n.ruleset||'(sin ruleset)';
+    }catch(e){ document.getElementById('nft').textContent='(ruleset no disponible)'; }
+    go(6);
+  }catch(e){
+    err('e5',e);
+    document.getElementById('btnExec').disabled = false;
+  }
+}
+
+go(0);
+</script>
+</body>
+</html>

@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qom Program — QOM Defender</title>
+  <script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<style>
+  :root {
+    /* Paleta institucional UniGuard (sin tema violeta). */
+    --bg: #0b1420; --dark: #101a28; --card: #152233; --elev: #1a2d42;
+    --line: #243447; --text: #d7e3ef; --muted: #7f95ab; --sec: #9eb6cf;
+    --acc: #4a7cb0; --acc2: #5a8fc0; --ok: #6aa88a; --bad: #c07a7a;
+    --warn: #c4a35a; --radius: 4px; --radius-lg: 6px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
+    font: 13.5px/1.42 "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: .45rem; padding: 0 .7rem;
+    background: rgba(11, 20, 32, .88); border-bottom: 1px solid var(--line); }
+  .mark { width: 18px; height: 18px; border-radius: 4px; background: var(--acc);
+    display: flex; align-items: center; justify-content: center; font-weight: 700; color: #f4f8fc; font-size: .5rem; }
+  header h1 { font-size: .78rem; margin: 0; font-weight: 650; }
+  header .sub { color: var(--muted); font-size: .72rem; margin: 0; }
+  .foot { border-top: 1px solid var(--line); color: var(--muted);
+    font-size: .68rem; text-align: center; padding: .9rem 0 .4rem;
+    margin-top: 1.5rem; letter-spacing: .03em; }
+  header .right { margin-left: auto; color: var(--muted); font-size: .72rem; }
+  main { padding: 1rem; max-width: 1400px; margin: 0 auto; }
+  .hint { color: var(--muted); font-size: .78rem; }
+  h3.feed { font-size: .88rem; color: var(--acc2); margin: .9rem 0 .5rem; }
+
+
+  table.pk { width: 100%; border-collapse: collapse; font-size: .78rem; }
+  table.pk th { text-align: left; color: var(--muted); font-weight: 600; font-size: .68rem;
+    text-transform: uppercase; letter-spacing: .05em; padding: .35rem .5rem;
+    border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--card); }
+  table.pk td { padding: .3rem .5rem; border-bottom: 1px solid var(--line); }
+  table.pk tr:hover td { background: var(--elev); }
+  .pk-wrap { max-height: 22rem; overflow-y: auto; border: 1px solid var(--line);
+    border-radius: var(--radius-lg); background: var(--card); }
+  .pk-name { font-weight: 600; color: var(--sec); }
+  .pk-badge { font-size: .62rem; padding: .05rem .4rem; border-radius: var(--radius);
+    background: var(--elev); color: var(--muted); border: 1px solid var(--line); }
+  .pk-badge.ii { color: var(--ok); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .term { background: var(--dark); border: 1px solid var(--line); border-radius: var(--radius-lg);
+    padding: .6rem .7rem; font-family: ui-monospace, "Cascadia Mono", monospace; font-size: .78rem; }
+  .term-out { max-height: 11rem; overflow-y: auto; white-space: pre-wrap; color: var(--sec); }
+  .term-out .t-err { color: var(--bad); }
+  .term-out .t-ok { color: var(--ok); }
+  .term-in { display: flex; gap: .45rem; margin-top: .5rem; }
+  .term-in .prompt { color: var(--acc2); }
+  .term-in input { flex: 1; background: transparent; border: none; outline: none;
+    color: var(--text); font: inherit; }
+  .jobs .job { padding: .3rem .5rem; border-bottom: 1px solid var(--line); font-size: .75rem;
+    display: flex; gap: .5rem; }
+  .st { font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; }
+  .st.running { color: var(--warn); } .st.done { color: var(--ok); } .st.failed { color: var(--bad); }
+  .search { width: 100%; background: var(--elev); border: 1px solid var(--line);
+    border-radius: var(--radius); color: var(--text); padding: .35rem .6rem; margin-bottom: .5rem;
+    font-size: .8rem; }
+  /* Updates del SO */
+  .upd-head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+    padding: .55rem .7rem; }
+  .upd-head button, .pk button.act { background: var(--elev); border: 1px solid var(--line);
+    color: var(--sec); border-radius: var(--radius); padding: .22rem .6rem; font-size: .7rem;
+    cursor: pointer; }
+  .upd-head button:hover, .pk button.act:hover { border-color: var(--acc); color: var(--acc2); }
+  .upd-head .upd-primary { background: var(--acc); color: #f4f8fc; border-color: var(--acc);
+    font-weight: 600; }
+  .upd-head .upd-primary:hover { background: var(--acc2); }
+  .pk td .act { margin-right: .35rem; }
+  details.upd-files { margin: .2rem 0; }
+  details.upd-files summary { color: var(--muted); font-size: .7rem; cursor: pointer; }
+  details.upd-files pre { font-size: .66rem; color: var(--muted); max-height: 9rem;
+    overflow: auto; margin: .2rem 0 0; white-space: pre-wrap; }
+  .upd-batch { border-bottom: 1px solid var(--line); padding: .45rem .7rem; }
+  .upd-batch .b-head { display: flex; gap: .6rem; align-items: baseline; flex-wrap: wrap; }
+  .upd-batch .b-head b { color: var(--sec); }
+  .upd-batch .b-meta { color: var(--muted); font-size: .7rem; }
+</style>
+  <link rel="stylesheet" href="/assets/ui-kit.css">
+  <script src="/assets/ui-kit.js" nonce="__CSP_NONCE__"></script>
+</head>
+<body>
+<header>
+  <div class="mark">QP</div>
+  <div>
+    <h1>Qom Program</h1>
+    <p class="sub">Software instalado · consumo · gestión con partición dedicada</p>
+  </div>
+<div class="right" >actualiza cada 10 s</div>
+</header>
+<main>
+  <div id="uk-strip"></div>
+
+  <h3 class="feed">Actualizaciones del sistema <span class="hint">(canales oficiales del SO QOM Defender)</span></h3>
+  <div class="pk-wrap">
+    <div class="upd-head">
+      <span id="upd-summary" class="hint">Consultando índices apt…</span>
+      <button id="upd-refresh" type="button">Buscar actualizaciones</button>
+      <button id="upd-all" type="button" class="upd-primary" hidden>Actualizar todo</button>
+    </div>
+    <table class="pk" id="upd-table" hidden>
+      <thead><tr><th>Paquete</th><th>Instalada</th><th>Disponible</th><th></th></tr></thead>
+      <tbody id="upd-body"></tbody>
+    </table>
+    <p class="hint" id="upd-empty" hidden style="padding:.5rem">Sin actualizaciones pendientes en los índices apt cacheados.</p>
+  </div>
+
+  <h3 class="feed">Historial de actualizaciones <span class="hint">(fecha · usuario · IP · archivos por paquete · reversión)</span></h3>
+  <div class="pk-wrap" id="upd-history"><p class="hint" style="padding:.5rem">Sin actualizaciones registradas todavía.</p></div>
+
+  <h3 class="feed">Terminal de paquetes</h3>
+  <div class="term">
+    <div class="term-out" id="term-out"><div class="t-ok">qom-program&gt; comandos: list | status | install &lt;pkg&gt; | remove &lt;pkg&gt; | jobs | help</div></div>
+    <div class="term-in"><span class="prompt">qom-program&gt;</span>
+      <input id="term-in" type="text" autocomplete="off" spellcheck="false" aria-label="Comando"></div>
+  </div>
+  <p class="hint">install/remove son acciones admin — whitelist estricta de nombre, audit + sello en evidencia. Solo paquetes del repo apt; los programas gestionados van a <code>/opt/qomprograms</code>.</p>
+
+  <h3 class="feed">Jobs</h3>
+  <div class="pk-wrap jobs" id="pg-jobs"><p class="hint" style="padding:.5rem">Sin operaciones.</p></div>
+
+  <h3 class="feed">Consumo por paquete <span class="hint">(procesos · CPU% · RSS)</span></h3>
+  <div class="pk-wrap" id="pg-usage"><p class="hint" style="padding:.5rem">Cargando…</p></div>
+
+  <h3 class="feed">Paquetes instalados</h3>
+  <input id="pk-search" class="search" type="text" placeholder="Filtrar paquetes…">
+  <div class="pk-wrap" id="pk-list"><p class="hint" style="padding:.5rem">Cargando…</p></div>
+
+  <h3 class="feed">Programas de terceros <span class="hint">(/opt/qomprograms — gestionados por Qom)</span></h3>
+  <p class="hint" style="margin-top:0">Herramientas vendor y binarios manuales que no vienen del repo apt (ej. Burp, Metasploit, nuclei). Viven aislados en el volumen dedicado.</p>
+  <div class="pk-wrap" id="tp-list"><p class="hint" style="padding:.5rem">Cargando…</p></div>
+</main>
+<script nonce="__CSP_NONCE__">
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+async function j(url, opts) {
+  const r = await fetch(url, Object.assign({ credentials: "same-origin" }, opts || {}));
+  if (!r.ok) { const t = await r.text(); throw new Error(`${r.status}: ${t.slice(0, 160)}`); }
+  return r.json();
+}
+/* Estado agregado para la tira SaaS (reemplaza la grilla pg-top). */
+const K = { pkgs: "—", size: "", part: "—", procs: "—", procsSub: "", jobs: "—", tp: "—", base: "—" };
+function renderKpis() {
+  const U = window.QomUI;
+  if (!U) return;
+  U.kpis("uk-strip", [
+    { icon: "box", label: "Paquetes instalados", value: K.pkgs, foot: K.size || "vía dpkg" },
+    { icon: "db", tint: K.part === "montada" ? "var(--ok)" : "var(--warn)", label: "Partición dedicada", value: K.part, foot: "/opt/qomprograms aislado" },
+    { icon: "cpu", label: "Procesos con dueño", value: K.procs, foot: K.procsSub || "paquete atribuible" },
+    { icon: "clock", label: "Jobs", value: K.jobs, foot: "operaciones apt" },
+    { icon: "grid", label: "Terceros", value: K.tp, foot: "programas vendor" },
+    { icon: K.base === "activo" ? "check" : "clock", tint: K.base === "activo" ? "var(--ok)" : "var(--warn)", label: "Baseline", value: K.base, foot: "alerta por paquetes ajenos" },
+  ]);
+}
+
+const fmtMB = (mb) => mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`;
+const fmtKB = (kb) => kb >= 1048576 ? `${(kb / 1048576).toFixed(1)} GB`
+  : kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`;
+
+async function loadStatus() {
+  try {
+    const d = await j("/api/v1/program/status");
+    if (!d.available) {
+      K.pkgs = "—"; K.size = d.note || "dpkg no disponible";
+    } else {
+      K.pkgs = d.packages;
+      K.size = `${fmtMB(d.installed_size_mb)} instalados (declarado)`;
+    }
+    const p = d.partition || {};
+    K.part = p.dedicated_partition ? "montada" : "sin partición";
+    K.base = d.baseline_set ? "activo" : "fijando…";
+    renderKpis();
+  } catch (e) {
+    K.pkgs = "err"; renderKpis();
+  }
+}
+
+async function loadUsage() {
+  try {
+    const d = await j("/api/v1/program/usage");
+    const rows = d.by_package || [];
+    const total = rows.reduce((a, r) => a + (r.processes || 0), 0);
+    K.procs = total;
+    K.procsSub = `${rows.length} paquetes con procesos activos`;
+    renderKpis();
+    $("pg-usage").innerHTML = rows.length
+      ? `<table class="pk"><thead><tr><th>Paquete</th><th class="num">Procs</th><th class="num">CPU%</th><th class="num">RSS</th></tr></thead>
+         <tbody>` + rows.slice(0, 80).map((r) =>
+          `<tr><td class="pk-name">${esc(r.package)}</td>
+           <td class="num">${r.processes}</td><td class="num">${r.cpu_pct}</td>
+           <td class="num">${fmtMB(Math.round(r.rss_mb))}</td></tr>`).join("") + `</tbody></table>`
+      : '<p class="hint" style="padding:.5rem">Sin procesos atribuibles.</p>';
+  } catch (e) {
+    $("pg-usage").innerHTML = `<p class="hint" style="padding:.5rem">Error: ${esc(e.message)}</p>`;
+  }
+}
+
+let allPkgs = [];
+async function loadPackages() {
+  try {
+    const d = await j("/api/v1/program/packages");
+    allPkgs = d.items || [];
+    renderPkgs();
+  } catch (e) {
+    $("pk-list").innerHTML = `<p class="hint" style="padding:.5rem">Error: ${esc(e.message)}</p>`;
+  }
+}
+function renderPkgs() {
+  const q = $("pk-search").value.trim().toLowerCase();
+  const rows = allPkgs.filter((p) => !q || p.name.toLowerCase().includes(q));
+  $("pk-list").innerHTML = rows.length
+    ? `<table class="pk"><thead><tr><th>Paquete</th><th>Versión</th><th class="num">Tamaño</th><th>Estado</th></tr></thead>
+       <tbody>` + rows.slice(0, 400).map((p) =>
+        `<tr><td class="pk-name">${esc(p.name)}</td><td>${esc(p.version)}</td>
+         <td class="num">${p.size_kb >= 1024 ? (p.size_kb / 1024).toFixed(1) + " MB" : p.size_kb + " KB"}</td>
+         <td><span class="pk-badge ${esc(p.status)}">${esc(p.status)}</span></td></tr>`).join("") + `</tbody></table>`
+    : '<p class="hint" style="padding:.5rem">Sin coincidencias.</p>';
+}
+$("pk-search").addEventListener("input", renderPkgs);
+
+async function loadThirdparty() {
+  try {
+    const d = await j("/api/v1/program/thirdparty");
+    const rows = d.programs || [];
+    K.tp = rows.length; renderKpis();
+    $("tp-list").innerHTML = rows.length
+      ? `<table class="pk"><thead><tr><th>Programa</th><th>Tipo</th><th class="num">Tamaño</th><th class="num">Archivos</th><th>Modificado</th></tr></thead>
+         <tbody>` + rows.map((p) =>
+          `<tr><td class="pk-name">${esc(p.name)}</td><td>${esc(p.kind)}</td>
+           <td class="num">${fmtKB(p.size_kb || 0)}${p.size_truncated ? "+" : ""}</td>
+           <td class="num">${p.files ?? "—"}</td>
+           <td>${p.mtime ? esc(new Date(p.mtime * 1000).toLocaleDateString()) : "—"}</td></tr>`).join("") + `</tbody></table>`
+      : `<p class="hint" style="padding:.5rem">${esc(d.note || "Sin programas de terceros instalados todavía — van acá los binarios vendor/herramientas manuales.")}</p>`;
+  } catch (e) {
+    $("tp-list").innerHTML = `<p class="hint" style="padding:.5rem">Error: ${esc(e.message)}</p>`;
+  }
+}
+
+async function loadJobs() {
+  try {
+    const d = await j("/api/v1/program/jobs");
+    const rows = d.jobs || [];
+    K.jobs = rows.filter((x) => x.state !== "done" && x.state !== "failed").length || rows.length;
+    renderKpis();
+    $("pg-jobs").innerHTML = rows.length
+      ? rows.map((j) =>
+          `<div class="job"><b>#${j.id}</b> <span>${esc(j.op)} ${esc(j.pkg)}</span>
+           <span class="hint">por ${esc(j.by)}</span>
+           <span class="st ${esc(j.state)}" style="margin-left:auto">${esc(j.state)}</span></div>`).join("")
+      : '<p class="hint" style="padding:.5rem">Sin operaciones.</p>';
+  } catch (e) { /* degradable */ }
+}
+
+/* ---------- Terminal ---------- */
+function termPrint(txt, cls) {
+  const out = $("term-out");
+  const d = document.createElement("div");
+  if (cls) d.className = cls;
+  d.textContent = txt;
+  out.appendChild(d);
+  out.scrollTop = out.scrollHeight;
+}
+async function termRun(cmdLine) {
+  termPrint(`qom-program> ${cmdLine}`);
+  const [cmd, ...rest] = cmdLine.trim().split(/\s+/);
+  const arg = rest.join(" ");
+  try {
+    switch (cmd) {
+      case "help":
+        termPrint("list | status | install <pkg> | remove <pkg> | jobs | usage | help");
+        break;
+      case "list":
+        await loadPackages();
+        termPrint(`${allPkgs.length} paquetes instalados`, "t-ok");
+        break;
+      case "status":
+        await loadStatus();
+        termPrint("status actualizado arriba", "t-ok");
+        break;
+      case "usage":
+        await loadUsage();
+        termPrint("uso actualizado abajo", "t-ok");
+        break;
+      case "jobs":
+        await loadJobs();
+        termPrint("jobs actualizados", "t-ok");
+        break;
+      case "install":
+      case "remove": {
+        if (!arg) { termPrint(`${cmd} requiere <pkg>`, "t-err"); return; }
+        const d = await j(`/api/v1/program/${cmd}`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pkg: arg }),
+        });
+        termPrint(`job #${d.job_id} lanzado (${d.op} ${d.pkg}) — seguí en Jobs`, "t-ok");
+        loadJobs();
+        break;
+      }
+      default:
+        termPrint(`comando desconocido: ${cmd} — 'help'`, "t-err");
+    }
+  } catch (e) {
+    termPrint(String(e.message || e), "t-err");
+  }
+}
+$("term-in").addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter" && ev.target.value.trim()) {
+    termRun(ev.target.value);
+    ev.target.value = "";
+  }
+});
+
+/* ---------- Updates del SO (apt) ---------- */
+let pendPkgs = [];
+async function loadUpgradable() {
+  try {
+    const d = await j("/api/v1/program/upgradable");
+    pendPkgs = d.items || [];
+    const tbl = $("upd-table"), empty = $("upd-empty"), all = $("upd-all");
+    if (!d.available) {
+      $("upd-summary").textContent = d.note || "apt no disponible en este host";
+      tbl.hidden = true; empty.hidden = true; all.hidden = true;
+      return;
+    }
+    const ageMin = d.index_age_secs != null ? Math.round(d.index_age_secs / 60) : null;
+    $("upd-summary").textContent = d.count === 0
+      ? "Sistema al día según los índices apt" + (ageMin != null ? ` (índice de hace ${ageMin} min)` : "")
+      : `${d.count} actualización${d.count === 1 ? "" : "es"} disponible${d.count === 1 ? "" : "s"}` +
+        (d.index_stale ? " · índice apt viejo — conviene refrescar" : ageMin != null ? ` · índice de hace ${ageMin} min` : "");
+    all.hidden = d.count === 0;
+    all.textContent = `Actualizar todo (${d.count})`;
+    empty.hidden = d.count !== 0;
+    tbl.hidden = d.count === 0;
+    $("upd-body").innerHTML = pendPkgs.map((p) =>
+      `<tr><td class="pk-name">${esc(p.name)}</td><td>${esc(p.from)}</td><td>${esc(p.to)}</td>
+       <td class="num"><button class="act" data-upd="${esc(p.name)}">Actualizar</button></td></tr>`).join("");
+    tbl.querySelectorAll("[data-upd]").forEach((b) => {
+      b.onclick = () => applyUpdate([b.dataset.upd]);
+    });
+  } catch (e) {
+    $("upd-summary").textContent = "Error consultando updates: " + e.message;
+  }
+}
+
+async function applyUpdate(pkgs) {
+  if (!confirm(`Aplicar actualización del SO a ${pkgs.length === 1 ? pkgs[0] : pkgs.length + " paquetes"}?\nEl proceso corre con audit + sello en evidencia.`)) return;
+  try {
+    const d = await j("/api/v1/program/update", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pkgs ? { packages: pkgs } : {}),
+    });
+    termPrint(`update: job #${d.job_id} — ${d.note || d.state}`, "t-ok");
+    loadJobs();
+    setTimeout(() => { loadUpgradable(); loadUpdateHistory(); }, 15000);
+  } catch (e) { termPrint("update: " + e.message, "t-err"); }
+}
+
+async function refreshIndexes() {
+  try {
+    const d = await j("/api/v1/program/update/refresh", { method: "POST" });
+    termPrint(`apt-get update: job #${d.job_id} corriendo`, "t-ok");
+    loadJobs();
+    setTimeout(loadUpgradable, 20000);
+  } catch (e) { termPrint("refresh: " + e.message, "t-err"); }
+}
+
+async function revertBatch(batchId, pkgs) {
+  const what = pkgs ? pkgs.join(", ") : "TODO el batch";
+  if (!confirm(`Revertir ${what} a la versión previa?\nSolo funciona si el repo aún ofrece esa versión; el resultado queda registrado.`)) return;
+  try {
+    const d = await j("/api/v1/program/update/rollback", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ batch_id: batchId, packages: pkgs || undefined }),
+    });
+    termPrint(`rollback: job #${d.job_id} — ${d.reverting} paquete(s)`, "t-ok");
+    loadJobs();
+    setTimeout(() => { loadUpgradable(); loadUpdateHistory(); }, 15000);
+  } catch (e) { termPrint("rollback: " + e.message, "t-err"); }
+}
+
+async function removePkg(name) {
+  if (!confirm(`Desinstalar ${name} del sistema?\nQueda auditado y sellado en evidencia.`)) return;
+  try {
+    const d = await j("/api/v1/program/remove", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pkg: name }),
+    });
+    termPrint(`remove ${name}: job #${d.job_id}`, "t-ok");
+    loadJobs();
+  } catch (e) { termPrint("remove: " + e.message, "t-err"); }
+}
+
+const fmtTs = (iso) => {
+  try { return new Date(iso).toLocaleString(); } catch { return iso || "—"; }
+};
+
+async function loadUpdateHistory() {
+  try {
+    const d = await j("/api/v1/program/update/history");
+    const rows = d.history || [];
+    if (!rows.length) {
+      $("upd-history").innerHTML = '<p class="hint" style="padding:.5rem">Sin actualizaciones registradas todavía.</p>';
+      return;
+    }
+    $("upd-history").innerHTML = rows.map((b) => {
+      const pkgs = b.packages || [];
+      const isUp = b.op === "upgrade";
+      if (b.op === "refresh") {
+        return `<div class="upd-batch"><div class="b-head"><b>Refresh índices apt</b>
+          <span class="b-meta">${esc(fmtTs(b.ts))} · por ${esc(b.by || "?")} · desde ${esc(b.ip || "?")} ${b.ok === false ? "· FALLÓ" : ""}</span></div></div>`;
+      }
+      const changed = pkgs.filter((p) => p.changed !== false);
+      const head = isUp
+        ? `<div class="b-head"><b>Update</b> <span class="b-meta">${esc(fmtTs(b.ts))} · por ${esc(b.by || "?")} · desde ${esc(b.ip || "?")} · ${b.packages_changed ?? pkgs.length} paquetes ${b.ok === false ? "· FALLÓ" : ""}</span>
+           <button class="act" data-rb="${esc(b.batch_id)}">Revertir batch</button></div>`
+        : `<div class="b-head"><b>Rollback</b> <span class="b-meta">${esc(fmtTs(b.ts))} · por ${esc(b.by || "?")} · desde ${esc(b.ip || "?")} · ref ${esc((b.batch_ref || "").slice(0, 8))} ${b.ok === false ? "· FALLÓ" : ""}</span></div>`;
+      const body = pkgs.map((p) => {
+        const ver = isUp
+          ? `${esc(p.from)} → ${esc(p.to)}${p.changed ? "" : " (sin cambio)"}`
+          : `${esc(p.name)} revertido a ${esc(p.reverted_to || p.installed_now)}${p.reverted === false ? " (no aplicado)" : ""}`;
+        const files = isUp && (p.files || []).length
+          ? `<details class="upd-files"><summary>${p.files_count} archivos${p.files_truncated ? " (lista truncada)" : ""} actualizados</summary><pre>${esc(p.files.join("\n"))}</pre></details>`
+          : "";
+        const acts = isUp && p.changed
+          ? `<button class="act" data-rbp="${esc(b.batch_id)}|${esc(p.name)}">Revertir</button><button class="act" data-rm="${esc(p.name)}">Desinstalar</button>`
+          : "";
+        return `<tr><td class="pk-name">${esc(p.name)}</td><td>${ver}${files}</td><td class="num">${acts}</td></tr>`;
+      }).join("");
+      return `<div class="upd-batch">${head}<table class="pk"><tbody>${body}</tbody></table></div>`;
+    }).join("");
+    $("upd-history").querySelectorAll("[data-rb]").forEach((b) => {
+      b.onclick = () => revertBatch(b.dataset.rb, null);
+    });
+    $("upd-history").querySelectorAll("[data-rbp]").forEach((b) => {
+      const [bid, pkg] = b.dataset.rbp.split("|");
+      b.onclick = () => revertBatch(bid, [pkg]);
+    });
+    $("upd-history").querySelectorAll("[data-rm]").forEach((b) => {
+      b.onclick = () => removePkg(b.dataset.rm);
+    });
+  } catch (e) {
+    $("upd-history").innerHTML = `<p class="hint" style="padding:.5rem">Error: ${esc(e.message)}</p>`;
+  }
+}
+$("upd-refresh").onclick = refreshIndexes;
+$("upd-all").onclick = () => applyUpdate(null);
+
+loadStatus(); loadPackages(); loadUsage(); loadJobs(); loadThirdparty();
+loadUpgradable(); loadUpdateHistory();
+setInterval(() => { loadStatus(); loadUsage(); loadJobs(); }, 10000);
+setInterval(loadUpgradable, 60000);
+// Terceros cambia poco y el walk de tamaños puede ser pesado: 60 s.
+setInterval(loadThirdparty, 60000);
+</script>
+<footer class="foot">Diseñado y programado por @apamar - Sistema operativo de Ciberdefensa *QOM Defender * v.0.1.0 setiembre 2026</footer>
+</body>
+</html>

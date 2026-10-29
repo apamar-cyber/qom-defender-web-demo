@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>qVERILINKS — Revisión SOC · QOM Defender</title>
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<style>
+  :root {
+    --bg: #0b1420; --card: #152233; --line: #243447;
+    --text: #d7e3ef; --muted: #7f95ab; --acc: #4a7cb0;
+    --ok: #6aa88a; --warn: #c4a35a; --bad: #c07a7a; --info: #5a8fc0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
+    font: 13.5px/1.42 "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: .45rem; padding: 0 .7rem;
+    background: rgba(11, 20, 32, .88); border-bottom: 1px solid var(--line); }
+  .mark { width: 18px; height: 18px; border-radius: 4px; background: var(--acc);
+    display: flex; align-items: center; justify-content: center; font-weight: 700;
+    color: #f4f8fc; font-size: .5rem; }
+  header h1 { font-size: .78rem; margin: 0; font-weight: 650; }
+  header .sub { color: var(--muted); font-size: .8rem; margin: 0; }
+  .wrap { max-width: 1100px; margin: 1rem auto 2rem; padding: 0 1rem; }
+  .filters { display: flex; gap: .5rem; margin-bottom: .8rem; flex-wrap: wrap; }
+  .filters button { padding: .35rem .75rem; border-radius: 4px; border: 1px solid var(--line);
+    background: transparent; color: var(--muted); font-weight: 500; cursor: pointer; font-size: .72rem; }
+  .filters button.on { color: var(--text); border-color: var(--acc); background: rgba(74,124,176,.14); }
+  table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+  th { text-align: left; color: var(--muted); font-size: .72rem; text-transform: uppercase;
+    letter-spacing: .5px; padding: .4rem .6rem; border-bottom: 1px solid var(--line); }
+  td { padding: .45rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr[data-v]:hover td { background: rgba(26, 45, 66, .45); }
+  .v { font-weight: 700; white-space: nowrap; }
+  .v.fraudulent { color: var(--bad); } .v.suspicious { color: var(--warn); }
+  .v.clean { color: var(--ok); } .v.unknown { color: var(--info); }
+  .target { font-family: ui-monospace, monospace; font-size: .78rem; word-break: break-all; max-width: 340px; }
+  .msg { color: var(--muted); font-size: .78rem; }
+  details summary { cursor: pointer; color: var(--muted); font-size: .75rem; }
+  .sigs { margin: .3rem 0 0; padding-left: 1.1rem; font-size: .78rem; }
+  .sigs .w { color: var(--warn); font-variant-numeric: tabular-nums; }
+  .block-btn { padding: .25rem .6rem; border-radius: 6px; border: 1px solid var(--bad);
+    background: transparent; color: var(--bad); font-size: .72rem; font-weight: 700; cursor: pointer; }
+  .block-btn:disabled { opacity: .4; cursor: default; }
+  .smtp { display: flex; gap: 1.4rem; flex-wrap: wrap; color: var(--muted); font-size: .78rem;
+    margin-bottom: .9rem; padding: .5rem .8rem; background: var(--card);
+    border: 1px solid var(--line); border-radius: 8px; }
+  .smtp b { color: var(--text); }
+  .empty { color: var(--muted); padding: 1.5rem; text-align: center; }
+</style>
+  <link rel="stylesheet" href="/assets/ui-kit.css">
+  <script src="/assets/ui-kit.js" nonce="__CSP_NONCE__"></script>
+</head>
+<body>
+<header>
+  <div class="mark">qV</div>
+  <div>
+    <h1>qVERILINKS — Revisión SOC</h1>
+    <p class="sub">Veredictos sellados · señales · bloqueo de dominios</p>
+  </div>
+</header>
+<div class="wrap">
+  <div id="uk-strip"></div>
+  <div class="smtp" id="smtp" style="display:none"></div>
+  <div class="filters">
+    <button class="on" data-f="all">Todos</button>
+    <button data-f="bad">Sospechosos + fraudulentos</button>
+    <button data-f="clean">Limpios</button>
+    <button data-f="unknown">Sin determinar</button>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Hora</th><th>Veredicto</th><th>Objetivo</th><th>Conf.</th><th>Capa</th><th>Detalle</th><th></th><th>Revisión SOC</th>
+    </tr></thead>
+    <tbody id="rows"><tr><td colspan="8" class="empty">Cargando…</td></tr></tbody>
+  </table>
+</div>
+<script nonce="__CSP_NONCE__">
+"use strict";
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let ITEMS = [], FILTER = "all";
+
+const VL = { fraudulent:"FRAUDULENTO", suspicious:"SOSPECHOSO", clean:"LIMPIO", unknown:"SIN DATOS" };
+
+function domainOf(t) {
+  try { return new URL(t).hostname; } catch { return null; }
+}
+
+function rowHtml(it) {
+  const dom = domainOf(it.target);
+  const sigs = (it.signals || []).map(s =>
+    `<li><span class="w">${s.weight > 0 ? "+" : ""}${s.weight}</span> ${esc(s.name)} — ${esc(s.detail)}</li>`).join("");
+  const det = `<details><summary>señales (${(it.signals||[]).length})</summary>` +
+    `<div class="msg">${esc(it.message)}</div><ul class="sigs">${sigs}</ul>` +
+    `<div class="msg">id: ${esc(it.report_id)} · fuentes: ${esc((it.sources||[]).join(", ") || "—")} · vía: ${esc(it.input_type)}</div></details>`;
+  const canBlock = it.verdict === "fraudulent" && dom;
+  const block = canBlock ? `<button class="block-btn" data-dom="${esc(dom)}">bloquear ${esc(dom)}</button>` : "";
+  const RD = { confirmed:"CONFIRMADO", false_positive:"FALSO POSITIVO", escalated:"ESCALADO" };
+  const rev = it.review
+    ? `<span class="v ${it.review.decision === "false_positive" ? "clean" : it.review.decision === "confirmed" ? "fraudulent" : "suspicious"}">${RD[it.review.decision]||esc(it.review.decision)}</span>
+       <div class="msg">${esc(it.review.by)} · ${esc((it.review.at||"").replace("T"," ").slice(0,19))}${it.review.note ? " — " + esc(it.review.note) : ""}</div>`
+    : `<button class="block-btn rev-btn" data-rid="${esc(it.report_id)}" data-d="confirmed">confirmar</button>
+       <button class="block-btn rev-btn" data-rid="${esc(it.report_id)}" data-d="false_positive">falso positivo</button>
+       <button class="block-btn rev-btn" data-rid="${esc(it.report_id)}" data-d="escalated">escalar</button>`;
+  return `<tr data-v="${it.verdict}">
+    <td>${esc((it.timestamp||"").replace("T"," ").slice(0,19))}</td>
+    <td><span class="v ${it.verdict}">${VL[it.verdict]||esc(it.verdict)}</span></td>
+    <td class="target">${esc(it.target)}</td>
+    <td>${Math.round((it.confidence||0)*100)}%</td>
+    <td>${esc(it.layer)}</td>
+    <td>${det}</td>
+    <td>${block}</td>
+    <td>${rev}</td></tr>`;
+}
+
+function render() {
+  const tb = document.getElementById("rows");
+  const list = ITEMS.filter(it =>
+    FILTER === "all" ? true :
+    FILTER === "bad" ? (it.verdict === "fraudulent" || it.verdict === "suspicious") :
+    it.verdict === FILTER);
+  tb.innerHTML = list.length
+    ? list.map(rowHtml).join("")
+    : '<tr><td colspan="8" class="empty">Sin reportes en este filtro.</td></tr>';
+  // Tira SaaS: la cola de revisión en números.
+  const U = window.QomUI;
+  if (U) {
+    const fraud = ITEMS.filter(i => i.verdict === "fraudulent").length;
+    const susp = ITEMS.filter(i => i.verdict === "suspicious").length;
+    const clean = ITEMS.filter(i => i.verdict === "clean").length;
+    U.kpis("uk-strip", [
+      { icon: "doc", label: "Veredictos", value: ITEMS.length, foot: "sellados en evidencia" },
+      { icon: "alert", tint: susp ? "var(--warn)" : "var(--ok)", label: "Sospechosos", value: susp, foot: "a revisar" },
+      { icon: "shield", tint: fraud ? "var(--bad)" : "var(--ok)", label: "Fraudulentos", value: fraud, foot: fraud ? "dominios bloqueables" : "sin fraude confirmado" },
+      { icon: "check", tint: "var(--ok)", label: "Limpios", value: clean, foot: ITEMS.length ? Math.round(100 * clean / ITEMS.length) + "% del total" : "—" },
+    ]);
+  }
+}
+
+document.querySelectorAll(".filters button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".filters button").forEach(x => x.classList.remove("on"));
+  b.classList.add("on"); FILTER = b.dataset.f; render();
+});
+
+document.getElementById("rows").addEventListener("click", async (e) => {
+  const rv = e.target.closest(".rev-btn");
+  if (rv && !rv.disabled) {
+    rv.disabled = true;
+    const r = await fetch("/api/v1/qverilinks/review", {
+      method: "POST", credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ report_id: rv.dataset.rid, decision: rv.dataset.d }),
+    }).catch(() => null);
+    if (r && r.ok) { load(); return; }
+    rv.textContent = "error (rol operator requerido)";
+    return;
+  }
+  const b = e.target.closest(".block-btn");
+  if (!b || b.disabled) return;
+  b.disabled = true;
+  const r = await fetch("/api/v1/qverilinks/block", {
+    method: "POST", credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ domain: b.dataset.dom }),
+  }).catch(() => null);
+  b.textContent = r && r.ok ? `✓ ${b.dataset.dom} bloqueado` : "error (rol operator requerido)";
+});
+
+async function load() {
+  const r = await fetch("/api/v1/qverilinks/history", { credentials: "same-origin" }).catch(() => null);
+  if (!r || !r.ok) {
+    document.getElementById("rows").innerHTML =
+      '<tr><td colspan="8" class="empty">No se pudo leer el historial.</td></tr>';
+    return;
+  }
+  const h = await r.json();
+  ITEMS = h.items || [];
+  if (h.smtp && h.smtp.accepted !== undefined || h.smtp && h.smtp.msgs_accepted !== undefined) {
+    const s = h.smtp, el = document.getElementById("smtp");
+    el.style.display = "flex";
+    el.innerHTML = Object.entries(s).map(([k, v]) =>
+      `<span>${esc(k)}: <b>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</b></span>`).join("");
+  }
+  render();
+}
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

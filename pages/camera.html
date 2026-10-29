@@ -1,0 +1,301 @@
+<!doctype html>
+<!-- qCAMERA — protección de videovigilancia y alarmas.
+
+     Lo que garantiza el daemon: inventario persistente, discovery por
+     escaneo TCP de puertos característicos, audit de postura (credencial
+     por defecto, TLS, puertos riesgosos, CVEs por vendor en tabla local)
+     y clasificación de observaciones de tráfico en eventos sellados.
+     Lo que NO hace: no habla ONVIF/mDNS todavía, no consulta feeds CVE
+     online, y las acciones (aislar/bloquear) son PROPUESTAS HITL —
+     nunca enforcement automático. -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qCAMERA — Videovigilancia</title>
+<link rel="stylesheet" href="/assets/share-ui.css">
+<link rel="stylesheet" href="/assets/ui-kit.css">
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<script src="/assets/share-ui.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<header class="top">
+  <div class="mark">QC</div>
+  <h1 class="qom-wm" aria-label="QOM Defender OS"><span class="wq">QOM</span><span class="we">Def</span><span class="wd">en</span><span class="we">der</span><span class="wq">OS</span></h1>
+  <nav>
+    <a href="/">Consola</a>
+    <a class="active" href="/camera/">qCAMERA</a>
+  </nav>
+</header>
+<div class="wrap" style="max-width:1200px">
+<h1>qCAMERA</h1>
+<div class="sui-sub">Protección de cámaras IP, NVR/DVR, concentradores de
+  alarmas y controladoras de acceso. Cada evento se sella en la cadena de
+  evidencia; aislar o bloquear son propuestas que decide un operador —
+  nada se ejecuta solo.</div>
+<div class="sui-msg" id="msg"></div>
+
+<div class="sui-panel">
+  <h3>estado</h3>
+  <div id="health" class="sui-mut">consultando…</div>
+</div>
+
+<div class="sui-panel">
+  <h3>descubrir dispositivos</h3>
+  <div class="sui-row">
+    <input class="sui-input" id="scanNet" placeholder="red CIDR (192.168.10.0/24)" style="width:240px">
+    <label class="sui-mut" style="font-size:.85rem"><input type="checkbox" id="scanReg"> registrar hallazgos</label>
+    <button class="sui-btn primary" id="scanBtn">escanear</button>
+  </div>
+  <div id="scanOut" class="sui-mut" style="font-size:.85rem"></div>
+</div>
+
+<div class="sui-panel">
+  <h3>registrar manualmente</h3>
+  <div class="sui-row">
+    <input class="sui-input" id="dIp" placeholder="ip" style="width:150px">
+    <input class="sui-input" id="dVendor" placeholder="fabricante" style="width:140px">
+    <input class="sui-input" id="dModel" placeholder="modelo" style="width:140px">
+    <select class="sui-input" id="dKind" style="width:160px">
+      <option value="ip_camera">cámara IP</option>
+      <option value="nvr">NVR</option>
+      <option value="dvr">DVR</option>
+      <option value="alarm_hub">concentrador alarmas</option>
+      <option value="access_controller">controladora acceso</option>
+      <option value="alarm_sensor">sensor</option>
+    </select>
+    <input class="sui-input" id="dPort" placeholder="puerto admin (80)" style="width:120px">
+    <input class="sui-input" id="dZone" placeholder="zona" style="width:120px">
+    <button class="sui-btn primary" id="regBtn">registrar</button>
+  </div>
+</div>
+
+<div class="sui-panel">
+  <h3>política</h3>
+  <div class="sui-row">
+    <input class="sui-input" id="cIps" placeholder="IPs autorizadas (coma)" style="width:320px">
+    <button class="sui-btn" id="cfgBtn">guardar allowlist</button>
+  </div>
+  <div class="sui-mut" style="font-size:.8rem">Solo estas IPs pueden
+    acceder a los dispositivos — cualquier otra conexión entrante es
+    evento <b>unauthorized_access</b> sellado.</div>
+</div>
+
+<div class="sui-panel">
+  <h3>auditoría de seguridad</h3>
+  <div id="auditScore" class="sui-mut">sin datos</div>
+  <div id="auditTop" style="font-size:.85rem"></div>
+</div>
+
+<div class="sui-panel">
+  <h3>correlación cámara × QOM Share</h3>
+  <div class="sui-mut" style="font-size:.8rem;margin-bottom:.4rem">
+    Tres patrones: cámara comprometida + exfiltración · sabotaje +
+    ransomware · fuerza bruta + pivote + acceso share. Cada alerta
+    une la cadena completa en un solo incidente sellado.</div>
+  <div class="sui-row">
+    <button class="sui-btn" id="corrBtn">correlacionar ahora</button>
+  </div>
+  <div id="corrRows"></div>
+</div>
+
+<h3>inventario</h3>
+<table class="sui-table">
+  <thead><tr><th>dispositivo</th><th>ip</th><th>tipo</th><th>zona</th>
+    <th>salud</th><th>postura</th><th></th></tr></thead>
+  <tbody id="devRows"></tbody>
+</table>
+
+<h3>eventos recientes</h3>
+<table class="sui-table">
+  <thead><tr><th>cuándo</th><th>tipo</th><th>severidad</th>
+    <th>origen</th><th>acciones propuestas</th></tr></thead>
+  <tbody id="evRows"></tbody>
+</table>
+</div>
+
+<script defer nonce="__CSP_NONCE__">
+document.addEventListener("DOMContentLoaded", () => {
+  const msg = document.getElementById("msg");
+  const healthBadge = { healthy: "✅ sana", warning: "⚠ aviso",
+    at_risk: "⚠ riesgo", compromised: "🚨 comprometida", offline: "⚫ offline" };
+  const sevBadge = { low: "baja", medium: "media", high: "🔺 alta", critical: "🚨 crítica" };
+
+  const load = async () => {
+    try {
+      const [dash, devs, evs, rep, corrs] = await Promise.all([
+        ShareUI.api("/api/v1/camera"),
+        ShareUI.api("/api/v1/camera/devices"),
+        ShareUI.api("/api/v1/camera/events"),
+        ShareUI.api("/api/v1/camera/audit-report"),
+        ShareUI.api("/api/v1/camera/correlations"),
+      ]);
+      const h = dash.health || {};
+      document.getElementById("health").innerHTML =
+        `${dash.devices} dispositivo(s) · ` +
+        ["healthy","warning","at_risk","compromised","offline"]
+          .map(k => `${healthBadge[k]||k}: ${h[k]||0}`).join(" · ") +
+        `<br><span style="font-size:.8rem">${ShareUI.esc(dash.honest||"")}</span>`;
+      document.getElementById("cIps").value =
+        (dash.config?.authorized_ips || []).join(", ");
+
+      document.getElementById("devRows").innerHTML = devs.devices.length
+        ? devs.devices.map((d) => `<tr>
+          <td><b>${ShareUI.esc(d.vendor||"?")} ${ShareUI.esc(d.model||"")}</b></td>
+          <td class="sui-mut">${ShareUI.esc(d.ip)}:${d.admin_port}</td>
+          <td>${ShareUI.esc(d.kind)}</td>
+          <td>${ShareUI.esc(d.zone||"—")}</td>
+          <td>${healthBadge[d.health]||ShareUI.esc(d.health)}</td>
+          <td class="sui-mut" style="font-size:.8rem">${
+            d.security?.last_audit
+              ? `${d.security.default_password ? "🚨 cred. defecto " : ""}` +
+                `${d.security.tls_enabled ? "TLS " : "sin TLS "}` +
+                `${(d.security.unnecessary_ports||[]).length ? "puertos:" + d.security.unnecessary_ports.join(",") : ""}` +
+                `${(d.security.cves||[]).length ? " CVEs:" + d.security.cves.length : ""}`
+              : "sin auditar"}</td>
+          <td style="white-space:nowrap">
+            <a data-a="${d.id}">auditar</a> ·
+            <a data-x="${d.id}" style="color:var(--bad)">quitar</a></td>
+        </tr>`).join("")
+        : `<tr><td colspan="7" class="sui-mut">inventario vacío —
+            escaneá la red o registrá un dispositivo manualmente</td></tr>`;
+      document.querySelectorAll("a[data-a]").forEach((a) =>
+        (a.onclick = () => audit(a.dataset.a)));
+      document.querySelectorAll("a[data-x]").forEach((a) =>
+        (a.onclick = () => del(a.dataset.x)));
+
+      document.getElementById("evRows").innerHTML = evs.events.length
+        ? evs.events.map((e) => `<tr>
+          <td class="sui-mut">${ShareUI.fmtTime(e.detected_at)}</td>
+          <td>${ShareUI.esc(e.event_type)}</td>
+          <td>${sevBadge[e.severity]||ShareUI.esc(e.severity)}</td>
+          <td class="sui-mut">${ShareUI.esc(e.source_ip||"—")}</td>
+          <td class="sui-mut" style="font-size:.8rem">${(e.proposed_actions||[]).map(ShareUI.esc).join(" · ")||"—"}</td>
+        </tr>`).join("")
+        : `<tr><td colspan="5" class="sui-mut">sin eventos</td></tr>`;
+
+      // Auditoría: score global (peor dispositivo) + conteos + top peores.
+      const score = rep.global_score ?? 100;
+      const scoreColor = score >= 80 ? "var(--ok,#2a2)" : score >= 50 ? "var(--warn,#ca0)" : "var(--bad,#d33)";
+      const bar = Math.max(0, Math.min(100, score));
+      document.getElementById("auditScore").innerHTML =
+        `<div style="font-size:1.4rem;color:${scoreColor}"><b>${score}/100</b>` +
+        ` ${score >= 80 ? "saludable" : score >= 50 ? "riesgo" : "🚨 crítico"}</div>` +
+        `<div style="background:#333;border-radius:4px;height:10px;width:260px">` +
+        `<div style="background:${scoreColor};width:${bar}%;height:100%;border-radius:4px"></div></div>` +
+        `<div class="sui-mut" style="font-size:.8rem;margin-top:.3rem">${rep.audited} auditado(s) · ` +
+        Object.entries(rep.counts || {}).map(([k, v]) => `${k}: ${v}`).join(" · ") +
+        `<br>${ShareUI.esc(rep.honest || "")}</div>`;
+      document.getElementById("auditTop").innerHTML = rep.devices
+        .filter((d) => d.findings.length)
+        .slice(0, 5)
+        .map((d) => `<div style="margin:.3rem 0"><b>${ShareUI.esc(d.label||d.ip)}</b>
+          <span class="sui-mut">${ShareUI.esc(d.ip)}</span> — ${d.score}/100
+          <a data-r="${d.device_id}">plan de remediación</a>
+          <div class="sui-mut" style="font-size:.8rem">${
+            d.findings.map((f) => `${f.severity}: ${ShareUI.esc(f.title)}`).join(" · ")}</div></div>`)
+        .join("");
+      document.querySelectorAll("a[data-r]").forEach((a) =>
+        (a.onclick = () => remediate(a.dataset.r)));
+
+      // Correlaciones emitidas.
+      document.getElementById("corrRows").innerHTML = corrs.correlations.length
+        ? corrs.correlations.map((c) => `<div class="sui-mut" style="margin:.3rem 0;font-size:.85rem">
+          <b style="color:var(--bad)">🚨 ${ShareUI.esc(c.kind)}</b>
+          confianza ${(c.confidence * 100).toFixed(0)}% · ${ShareUI.fmtTime(c.detected_at)}
+          <br>acciones: ${(c.proposed_actions || []).map(ShareUI.esc).join(" · ")}</div>`).join("")
+        : `<div class="sui-mut" style="font-size:.85rem">sin patrones correlacionados —
+            las ventanas share llegan por /api/v1/camera/share-obs</div>`;
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  document.getElementById("scanBtn").onclick = async () => {
+    const network = document.getElementById("scanNet").value.trim();
+    if (!network) { ShareUI.msg(msg, "indicá una red CIDR", "err"); return; }
+    const out = document.getElementById("scanOut");
+    out.textContent = "escaneando… (timeout ~400ms por puerto)";
+    try {
+      const r = await ShareUI.api("/api/v1/camera/scan", {
+        method: "POST",
+        body: JSON.stringify({ network, register: document.getElementById("scanReg").checked }),
+      });
+      out.innerHTML = `${r.found.length} host(s) con puertos característicos` +
+        (r.registered_now ? ` · ${r.registered_now} registrados` : "") +
+        r.found.map((d) => `<br>· ${ShareUI.esc(d.ip)} → ${d.open_ports.join(",")}${d.registered ? " (ya registrado)" : ""}`).join("");
+      load();
+    } catch (e) { out.textContent = e.message; }
+  };
+
+  document.getElementById("regBtn").onclick = async () => {
+    const body = {
+      ip: document.getElementById("dIp").value.trim(),
+      vendor: document.getElementById("dVendor").value.trim(),
+      model: document.getElementById("dModel").value.trim(),
+      kind: document.getElementById("dKind").value,
+      admin_port: parseInt(document.getElementById("dPort").value) || 80,
+      zone: document.getElementById("dZone").value.trim(),
+    };
+    if (!body.ip) { ShareUI.msg(msg, "ip obligatoria", "err"); return; }
+    try {
+      await ShareUI.api("/api/v1/camera/devices", { method: "POST", body: JSON.stringify(body) });
+      ShareUI.msg(msg, `${body.ip} registrado`, "ok"); load();
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  document.getElementById("cfgBtn").onclick = async () => {
+    const ips = document.getElementById("cIps").value
+      .split(",").map((s) => s.trim()).filter(Boolean);
+    try {
+      await ShareUI.api("/api/v1/camera/config", {
+        method: "POST",
+        body: JSON.stringify({ authorized_ips: ips }),
+      });
+      ShareUI.msg(msg, "allowlist guardada y sellada", "ok"); load();
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  const audit = async (id) => {
+    try {
+      const r = await ShareUI.api(`/api/v1/camera/audit/${id}`, { method: "POST" });
+      const a = r.audit;
+      ShareUI.msg(msg, a.reachable
+        ? `audit: ${a.default_credential ? "🚨 CREDENCIAL POR DEFECTO (" + a.default_credential + ") " : "sin cred. por defecto"}· TLS ${a.tls_enabled ? "sí" : "no"} · puertos riesgosos: ${a.risky_ports.join(",") || "ninguno"} · CVEs: ${a.cves.length}`
+        : "dispositivo no responde — marcado offline", a.reachable ? "ok" : "err");
+      load();
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  document.getElementById("corrBtn").onclick = async () => {
+    try {
+      const r = await ShareUI.api("/api/v1/camera/correlate", { method: "POST" });
+      ShareUI.msg(msg, r.correlations.length
+        ? `${r.correlations.length} patrón(es) detectado(s)`
+        : "sin patrones nuevos en la ventana (15 min)",
+        r.correlations.length ? "err" : "ok");
+      load();
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  const remediate = async (id) => {
+    try {
+      const r = await ShareUI.api(`/api/v1/camera/remediate/${id}`, { method: "POST" });
+      ShareUI.msg(msg, `plan sellado: ${(r.plan || []).map((p) => p.remediation).join(" → ") || "sin hallazgos"} — ${r.honest || "ejecución HITL"}`, "ok");
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  const del = async (id) => {
+    if (!confirm("¿Quitar el dispositivo del inventario?")) return;
+    try {
+      await ShareUI.api(`/api/v1/camera/devices/${id}`, { method: "DELETE" });
+      load();
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  load();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,424 @@
+<!doctype html>
+<!-- qom IA — RAG institucional + playbooks generados por IA.
+
+     Dos paneles:
+     · Consulta: pregunta contra el conocimiento del appliance (docs,
+       KB, casos del tenant, políticas). Respuesta con citas [n]
+       verificadas; si no hay fuentes relevantes dice "No encontré" y
+       no inventa. El filtro tenant/rol se aplica EN LA BÚSQUEDA.
+     · Playbooks: el operador describe un escenario y el LLM propone un
+       borrador YAML validado contra el registry cerrado de acciones.
+       El draft NO se ejecuta: la promoción es humana y admin-gated.
+
+     Verdad operativa: el panel muestra siempre el modo real (hybrid /
+     bm25 / sin LLM / plantilla) — nunca se promete IA que no hubo. -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom IA</title>
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --bg:#0b1420; --card:#152233; --card2:#1a2d42; --ink:#d7e3ef;
+  --dim:#7f95ab; --mut:#243447; --acc:#4a7cb0; --warn:#c4a35a; --bad:#c07a7a;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;font-size:13px}
+.wrap{max-width:1150px;margin:0 auto;padding:1.2rem}
+.top{display:flex;justify-content:space-between;align-items:baseline;
+  flex-wrap:wrap;gap:.8rem;margin-bottom:1rem}
+.brand{font-size:1.35rem;font-weight:700}
+.brand em{color:var(--acc);font-style:normal}
+.back{color:var(--acc);text-decoration:none;font-size:.8rem}
+.sec{background:var(--card);border:1px solid var(--mut);border-radius:8px;
+  padding:1rem 1.2rem;margin-bottom:1.2rem}
+.sec h2{margin:.1rem 0 .6rem;font-size:1rem;color:var(--acc)}
+.sec .hint{color:var(--dim);font-size:.72rem;margin-bottom:.8rem;line-height:1.5}
+.row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}
+input[type=text],textarea,select{background:var(--card2);border:1px solid var(--mut);
+  color:var(--ink);border-radius:4px;padding:.5rem .7rem;font:inherit;width:100%}
+textarea{min-height:5.5rem;resize:vertical}
+input[type=text].grow{flex:1;min-width:220px}
+button.act{background:var(--acc);color:#f4f8fc;border:0;padding:.5rem 1.2rem;
+  cursor:pointer;font-family:inherit;font-weight:600;border-radius:4px}
+button.ghost{background:none;border:1px solid var(--mut);color:var(--dim);
+  padding:.4rem .9rem;cursor:pointer;font-family:inherit;border-radius:4px}
+button.ghost:hover{border-color:var(--acc);color:var(--acc)}
+button.danger{border:1px solid var(--bad);color:var(--bad);background:none;
+  padding:.35rem .8rem;cursor:pointer;font-family:inherit;border-radius:4px}
+button:disabled{opacity:.45;cursor:default}
+.badge{display:inline-block;background:var(--card2);border:1px solid var(--mut);
+  padding:.12rem .55rem;border-radius:10px;font-size:.65rem;color:var(--acc);
+  margin:.15rem .25rem .15rem 0;white-space:nowrap}
+.badge.warn{border-color:var(--warn);color:var(--warn)}
+.badge.dim{color:var(--dim)}
+.answer{background:var(--card2);border:1px solid var(--mut);border-radius:6px;
+  padding:.9rem 1rem;margin-top:.9rem;font-family:ui-sans-serif,system-ui,
+  sans-serif;font-size:.9rem;line-height:1.6;white-space:pre-wrap}
+.answer.noground{border-style:dashed;border-color:var(--warn)}
+.srcs{margin-top:.7rem;font-size:.72rem;color:var(--dim)}
+.srcs .s{padding:.3rem 0;border-top:1px solid var(--mut)}
+.srcs .s b{color:var(--acc)}
+.err{color:var(--bad);font-size:.75rem;margin-top:.5rem}
+.ok{color:var(--acc);font-size:.75rem;margin-top:.5rem}
+table{width:100%;border-collapse:collapse;font-size:.75rem}
+th,td{padding:.4rem .5rem;border-bottom:1px solid var(--mut);text-align:left;vertical-align:top}
+th{color:var(--dim);font-weight:600;font-size:.68rem;text-transform:uppercase;
+  letter-spacing:.05em}
+pre.yaml{background:#101a28;border:1px solid var(--mut);border-radius:6px;
+  padding:.8rem;overflow:auto;font-size:.72rem;line-height:1.45;max-height:380px}
+details.pol{margin-top:.8rem;border:1px dashed var(--mut);border-radius:6px;
+  padding:.6rem .8rem}
+details.pol summary{cursor:pointer;color:var(--warn);font-size:.78rem}
+.polgrid{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-top:.6rem}
+.polgrid .full{grid-column:1/-1}
+label.lab{display:block;color:var(--dim);font-size:.66rem;margin-bottom:.2rem}
+.admin-only{display:none}
+.foot{margin-top:2rem;padding:1rem 0 .4rem;border-top:1px solid var(--mut);
+  color:var(--dim);font-size:.68rem;text-align:center;letter-spacing:.03em}
+</style>
+  <link rel="stylesheet" href="/assets/ui-kit.css">
+  <script src="/assets/ui-kit.js" nonce="__CSP_NONCE__"></script>
+</head>
+<body>
+<header>
+  <div class="mark">QA</div>
+  <h1>Qom IA</h1>
+  <a class="back" href="/">← Live</a>
+</header>
+<div class="wrap">
+
+  <div id="uk-strip"></div>
+
+  <!-- CONSULTA RAG -->
+  <section class="sec">
+    <h2>Consulta institucional</h2>
+    <div class="hint">
+      Responde con la documentación, la base de conocimiento, los casos de tu
+      tenant y las políticas que haya subido tu administrador — cada respuesta
+      cita sus fuentes. Si no encuentra nada relevante lo dice; no inventa.
+    </div>
+    <div id="ragstatus"></div>
+    <div class="row">
+      <input id="q" class="grow" type="text" maxlength="2000"
+        placeholder="¿Cómo escalo una alerta de ransomware? ¿Cuál es el procedimiento de aislamiento?">
+      <button class="act" id="ask">Preguntar</button>
+      <button class="ghost admin-only" id="reindex" title="Reconstruye el índice (admin)">Reindexar</button>
+    </div>
+    <div id="ragerr" class="err"></div>
+    <div id="ragout"></div>
+
+    <details class="pol admin-only" >
+      <summary>Subir política institucional (admin)</summary>
+      <div class="hint">Documento de texto/markdown que la IA puede citar.
+        Se indexa inmediatamente y queda auditado en la cadena de evidencia.</div>
+      <div class="polgrid">
+        <div><label class="lab">Título</label><input id="pol_title" type="text"></div>
+        <div><label class="lab">ID (slug)</label><input id="pol_id" type="text" placeholder="pol-resp-incidentes"></div>
+        <div><label class="lab">Tenant</label>
+          <select id="pol_tenant"><option value="">global (todos)</option></select></div>
+        <div><label class="lab">Rol mínimo</label>
+          <select id="pol_role">
+            <option value="viewer">viewer</option>
+            <option value="operator" selected>operator</option>
+            <option value="admin">admin</option>
+          </select></div>
+        <div class="full"><label class="lab">Contenido (markdown)</label>
+          <textarea id="pol_body" style="min-height:8rem"></textarea></div>
+      </div>
+      <div class="row" style="margin-top:.6rem">
+        <button class="act" id="pol_save">Publicar política</button>
+        <span id="polerr" class="err"></span>
+      </div>
+    </details>
+  </section>
+
+  <!-- PLAYBOOKS IA -->
+  <section class="sec">
+    <h2>Playbooks generados por IA</h2>
+    <div class="hint">
+      Describí el escenario y el modelo propone un <b>borrador</b> validado
+      contra el registro cerrado de acciones del appliance. El draft nunca se
+      ejecuta solo: promoverlo requiere admin y queda sellado en evidencia.
+      Si el modelo no está disponible se usa una plantilla y se informa.
+    </div>
+    <div class="row">
+      <textarea id="scenario" placeholder="Ej.: ante ransomware detectado en una workstation, notificar al SOC, aislar la máquina previa aprobación humana y etiquetar el incidente"></textarea>
+    </div>
+    <div class="row" style="margin-top:.6rem">
+      <button class="act" id="gen">Generar borrador</button>
+      <button class="ghost" id="reload">Actualizar lista</button>
+    </div>
+    <div id="generr" class="err"></div>
+    <div id="genout"></div>
+
+    <table style="margin-top:1rem">
+      <thead><tr>
+        <th>Borrador</th><th>Estado</th><th>Modo</th><th>Tenant</th><th>Fecha</th><th></th>
+      </tr></thead>
+      <tbody id="pbrows"><tr><td colspan="6" class="hint">sin borradores</td></tr></tbody>
+    </table>
+  </section>
+
+  <div class="foot">qom Defender OS · IA con conocimiento institucional · borradores siempre bajo control humano</div>
+</div>
+
+<script nonce="__CSP_NONCE__">
+"use strict";
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function api(path, opts){
+  opts = opts || {};
+  opts.credentials = "same-origin";
+  if (opts.body && typeof opts.body !== "string") {
+    opts.headers = {"Content-Type":"application/json"};
+    opts.body = JSON.stringify(opts.body);
+  }
+  return fetch(path, opts).then(function(r){
+    return r.json().catch(function(){return {};}).then(function(j){
+      if (!r.ok) {
+        var e = new Error(j.error || j.detail || ("HTTP " + r.status));
+        e.status = r.status; throw e;
+      }
+      return j;
+    });
+  });
+}
+function post(path, body){ return api(path, {method:"POST", body: body || {}}); }
+
+var ROLE = "viewer";
+fetch("/api/v1/me", {credentials:"same-origin"}).then(function(r){
+  return r.ok ? r.json() : null;
+}).then(function(me){
+  ROLE = (me && me.role) || "viewer";
+  if (ROLE === "admin") {
+    document.querySelectorAll(".admin-only").forEach(function(el){
+      el.classList.remove("admin-only"); });
+    loadTenants();
+  }
+  refreshStatus(); loadPlaybooks();
+});
+
+/* ---------- RAG ---------- */
+function refreshStatus(){
+  api("/api/v1/rag/status").then(function(st){
+    var s = st.stats || {};
+    var html = "";
+    if (st.building) html += '<span class="badge warn">indexando…</span>';
+    html += '<span class="badge">docs ' + (s.documents||0) + '</span>';
+    html += '<span class="badge">fragmentos ' + (s.chunks||0) + '</span>';
+    html += '<span class="badge">' + esc(s.mode || "sin índice") + '</span>';
+    var cfg = st.config || {};
+    var emb = s.embed_model || cfg.embed_model;
+    if (emb) html += '<span class="badge">embed ' + esc(emb) + '</span>';
+    if (s.embed_error) html += '<span class="badge warn" title="' + esc(s.embed_error) + '">sin embeddings</span>';
+    if (!cfg.llm_model) html += '<span class="badge dim">LLM off — solo fragmentos</span>';
+    else html += '<span class="badge">' + esc(cfg.llm_model) + '</span>';
+    if (s.by_source) {
+      var parts = Object.keys(s.by_source).map(function(k){
+        return k + ":" + s.by_source[k]; }).join(" · ");
+      html += '<span class="badge dim" title="fragmentos por fuente">' + esc(parts) + '</span>';
+    }
+    document.getElementById("ragstatus").innerHTML = html;
+    // Tira SaaS: estado del conocimiento local.
+    var U = window.QomUI;
+    if (U) {
+      var srcN = s.by_source ? Object.keys(s.by_source).length : 0;
+      U.kpis("uk-strip", [
+        { icon: "book", label: "Documentos", value: s.documents || 0, foot: "base de conocimiento" },
+        { icon: "grid", label: "Fragmentos", value: s.chunks || 0, foot: srcN ? srcN + " fuentes indexadas" : esc(s.mode || "sin índice") },
+        { icon: "bolt", tint: cfg.llm_model ? "var(--ok)" : "var(--warn)", label: "Modelo LLM", value: cfg.llm_model ? "activo" : "off", foot: cfg.llm_model ? esc(cfg.llm_model) : "solo fragmentos, sin redacción" },
+        { icon: st.building ? "clock" : "check", tint: s.embed_error ? "var(--warn)" : "var(--ok)", label: "Embeddings", value: s.embed_error ? "error" : emb ? "activos" : "—", foot: st.building ? "indexando…" : emb ? esc(emb) : "búsqueda léxica" },
+      ]);
+    }
+  }).catch(function(){
+    document.getElementById("ragstatus").innerHTML =
+      '<span class="badge dim">estado no disponible</span>';
+  });
+}
+
+function ask(){
+  var q = document.getElementById("q").value.trim();
+  if (!q) return;
+  var err = document.getElementById("ragerr"); err.textContent = "";
+  var out = document.getElementById("ragout");
+  out.innerHTML = '<div class="hint">buscando…</div>';
+  post("/api/v1/rag/query", {q: q}).then(function(a){
+    var html = "";
+    var cls = a.grounded ? "answer" : "answer noground";
+    if (a.mode === "no_sources") {
+      html += '<div class="' + cls + '">' + esc(a.answer ||
+        "No encontré información relevante en el conocimiento disponible.") + '</div>';
+    } else {
+      html += '<div class="' + cls + '">' + esc(a.answer || "(sin redacción — solo fragmentos)") + '</div>';
+      if (!a.grounded) {
+        html += '<div><span class="badge warn">respuesta sin citas — verificar manualmente</span></div>';
+      }
+    }
+    var tags = '<span class="badge">modo ' + esc(a.mode) + '</span>';
+    if (a.model) tags += '<span class="badge">' + esc(a.model) + '</span>';
+    if (a.removed_citations && a.removed_citations.length) {
+      tags += '<span class="badge warn">' + a.removed_citations.length +
+        ' cita(s) inválida(s) eliminadas</span>';
+    }
+    (a.warnings || []).forEach(function(w){
+      tags += '<span class="badge warn">' + esc(w) + '</span>'; });
+    html += '<div style="margin-top:.4rem">' + tags + '</div>';
+    if (a.sources && a.sources.length) {
+      html += '<div class="srcs">' + a.sources.map(function(s){
+        var cited = (a.cited||[]).indexOf(s.n) >= 0;
+        return '<div class="s"><b>[' + s.n + ']</b> ' + esc(s.title) +
+          (s.heading ? " — " + esc(s.heading) : "") +
+          ' <span style="opacity:.7">(' + esc(s.source) + ': ' + esc(s.reference) + ')</span>' +
+          (cited ? ' <span class="badge">citada</span>' : '') +
+          '<div style="margin-top:.2rem;opacity:.8">' + esc(s.excerpt) + '</div></div>';
+      }).join("") + '</div>';
+    }
+    out.innerHTML = html;
+  }).catch(function(e){
+    out.innerHTML = "";
+    err.textContent = e.status === 401 || e.status === 403
+      ? "tu rol no puede consultar la IA" : e.message;
+  });
+}
+
+document.getElementById("ask").onclick = ask;
+document.getElementById("q").addEventListener("keydown", function(e){
+  if (e.key === "Enter") ask();
+});
+document.getElementById("reindex").onclick = function(){
+  var b = this; b.disabled = true;
+  post("/api/v1/rag/reindex", {}).then(function(r){
+    document.getElementById("ragerr").style.color = "";
+    refreshStatus();
+  }).catch(function(e){
+    document.getElementById("ragerr").textContent = e.message;
+  }).finally(function(){ b.disabled = false; });
+};
+
+function loadTenants(){
+  api("/api/v1/tenants").then(function(t){
+    var sel = document.getElementById("pol_tenant");
+    (t.tenants || []).forEach(function(x){
+      var o = document.createElement("option");
+      o.value = x.tenant_id; o.textContent = x.tenant_id;
+      sel.appendChild(o);
+    });
+  }).catch(function(){});
+}
+
+document.getElementById("pol_save").onclick = function(){
+  var err = document.getElementById("polerr"); err.textContent = "";
+  var body = {
+    id: document.getElementById("pol_id").value.trim(),
+    title: document.getElementById("pol_title").value.trim(),
+    text: document.getElementById("pol_body").value,
+    min_role: document.getElementById("pol_role").value
+  };
+  var t = document.getElementById("pol_tenant").value;
+  if (t) body.tenant = t;
+  post("/api/v1/rag/doc", body).then(function(){
+    err.style.color = "var(--acc)";
+    err.textContent = "política publicada e indexada";
+    document.getElementById("pol_body").value = "";
+    refreshStatus();
+  }).catch(function(e){
+    err.style.color = "var(--bad)";
+    err.textContent = e.message;
+  });
+};
+
+/* ---------- Playbooks ---------- */
+function modeBadge(mode){
+  if (mode === "template_fallback")
+    return '<span class="badge warn">plantilla (sin LLM)</span>';
+  return '<span class="badge">LLM</span>';
+}
+
+function gen(){
+  var sc = document.getElementById("scenario").value.trim();
+  if (!sc) return;
+  var err = document.getElementById("generr"); err.textContent = "";
+  var out = document.getElementById("genout");
+  out.innerHTML = '<div class="hint">generando borrador…</div>';
+  post("/api/v1/playbooks/generate", {scenario: sc}).then(function(d){
+    var html = '<div style="margin-top:.6rem">' +
+      modeBadge(d.mode) +
+      (d.model ? '<span class="badge">' + esc(d.model) + '</span>' : "") +
+      '<span class="badge dim">' + esc(d.id) + '</span>' +
+      '<span class="badge">estado ' + esc(d.status) + '</span>' + '</div>';
+    if (d.stripped_fields && d.stripped_fields.length) {
+      html += '<div><span class="badge warn">campos reservados ignorados del modelo: ' +
+        esc(d.stripped_fields.join(", ")) + '</span></div>';
+    }
+    if (d.validation_errors && d.validation_errors.length) {
+      html += '<div class="err">rechazado por el validador:<br>' +
+        d.validation_errors.map(esc).join("<br>") + '</div>';
+    }
+    html += '<pre class="yaml">' + esc(JSON.stringify(d.draft, null, 2)) + '</pre>';
+    html += '<div class="hint">borrador guardado como draft — la promoción a "active" es manual y solo admin; promover no ejecuta nada.</div>';
+    out.innerHTML = html;
+    loadPlaybooks();
+  }).catch(function(e){
+    out.innerHTML = "";
+    err.textContent = e.status === 403
+      ? "generar borradores requiere rol operator o admin" : e.message;
+  });
+}
+document.getElementById("gen").onclick = gen;
+
+function loadPlaybooks(){
+  api("/api/v1/playbooks").then(function(r){
+    var rows = (r.generated || []).map(function(g){
+      var acts = "";
+      if (ROLE === "admin") {
+        if (g.status === "draft") {
+          acts = '<button class="ghost" data-pro="' + esc(g.id) + '">promover</button> ' +
+                 '<button class="danger" data-del="' + esc(g.id) + '">descartar</button>';
+        }
+      }
+      var st = g.status === "active" ? '<span class="badge">active</span>'
+             : '<span class="badge warn">draft</span>';
+      var orig = g.origin === "ai-template" ? "plantilla"
+               : g.origin === "ai-llm" ? "LLM" : esc(g.origin || "?");
+      return "<tr><td><b>" + esc(g.name || g.id) + "</b><br><span class='hint'>" +
+        esc(g.id) + "</span></td><td>" + st + "</td><td>" +
+        orig + "</td><td>" + esc(g.tenant || "_global") + "</td><td>" +
+        esc((g.generated_at || "").slice(0, 19).replace("T", " ")) +
+        "</td><td>" + acts + "</td></tr>";
+    });
+    document.getElementById("pbrows").innerHTML = rows.length ? rows.join("")
+      : '<tr><td colspan="6" class="hint">sin borradores generados</td></tr>';
+    document.querySelectorAll("[data-pro]").forEach(function(b){
+      b.onclick = function(){ promote(b.getAttribute("data-pro")); };
+    });
+    document.querySelectorAll("[data-del]").forEach(function(b){
+      b.onclick = function(){ discard(b.getAttribute("data-del")); };
+    });
+  }).catch(function(e){
+    document.getElementById("pbrows").innerHTML =
+      '<tr><td colspan="6" class="err">' + esc(e.message) + "</td></tr>";
+  });
+}
+document.getElementById("reload").onclick = loadPlaybooks;
+
+function promote(id){
+  if (!confirm("¿Promover el borrador " + id + " a activo? Queda sellado en la cadena de evidencia. Esto NO ejecuta el playbook.")) return;
+  post("/api/v1/playbooks/promote", {id: id})
+    .then(loadPlaybooks)
+    .catch(function(e){ document.getElementById("generr").textContent = e.message; });
+}
+function discard(id){
+  if (!confirm("¿Descartar el borrador " + id + "?")) return;
+  post("/api/v1/playbooks/discard", {id: id})
+    .then(loadPlaybooks)
+    .catch(function(e){ document.getElementById("generr").textContent = e.message; });
+}
+</script>
+</body>
+</html>

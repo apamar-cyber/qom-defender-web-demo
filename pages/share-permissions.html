@@ -1,0 +1,126 @@
+<!doctype html>
+<!-- qom Share — permisos.
+
+     ACLs por carpeta top-level. Principales: username, @rol o "*".
+     Las ACL refinen el rol — nunca lo amplían; sin ACL aplicable
+     rige el rol (admin/editor todo, viewer solo lectura). PUT
+     /api/v1/share/permissions/folder exige share.admin. -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom Share — Permisos</title>
+<link rel="stylesheet" href="/assets/share-ui.css">
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<script src="/assets/share-ui.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Permisos</h1>
+<div class="sui-sub">ACL por carpeta top-level. La ACL refina el rol:
+  un editor con <code>write: false</code> en la carpeta NO escribe
+  ahí aunque su rol lo permita. Sin ACL → default del rol.</div>
+<div class="sui-msg" id="msg"></div>
+<div class="sui-row" style="margin-bottom:.9rem">
+  <select class="sui-select" id="folder" style="min-width:200px"></select>
+  <span class="sui-mut" id="fnote"></span>
+</div>
+<div class="sui-panel">
+  <h3>ACLs de la carpeta</h3>
+  <table class="sui-table">
+    <thead><tr><th>principal</th><th>leer</th><th>escribir</th><th>borrar</th><th></th></tr></thead>
+    <tbody id="acls"></tbody>
+  </table>
+  <div class="sui-row" style="margin-top:.7rem">
+    <select class="sui-select" id="prin"></select>
+    <label class="sui-mut"><input type="checkbox" id="cr" checked> leer</label>
+    <label class="sui-mut"><input type="checkbox" id="cw"> escribir</label>
+    <label class="sui-mut"><input type="checkbox" id="cd"> borrar</label>
+    <button class="sui-btn" id="add">agregar ACL</button>
+    <button class="sui-btn primary" id="save">guardar carpeta</button>
+  </div>
+</div>
+<div class="sui-panel">
+  <h3>roles por defecto (sin ACL)</h3>
+  <div class="sui-mut">admin → todo · editor → todo · viewer → solo lectura.
+    Las ACL se aplican por carpeta sobre ese piso.</div>
+</div>
+<script defer nonce="__CSP_NONCE__">
+document.addEventListener("DOMContentLoaded", () => {
+  ShareUI.layout("permissions");
+  const msg = document.getElementById("msg");
+  let data = { folders: [], acls: [], principals: { users: [], roles: [] } };
+  let working = [];
+
+  const current = () => document.getElementById("folder").value;
+
+  const renderPrins = () => {
+    const opts = ["*", ...data.principals.roles, ...data.principals.users];
+    document.getElementById("prin").innerHTML =
+      opts.map((p) => `<option>${ShareUI.esc(p)}</option>`).join("");
+  };
+
+  const renderFolders = () => {
+    const sel = document.getElementById("folder");
+    sel.innerHTML = [`<option value="*">/ (raíz)</option>`,
+      ...data.folders.map((f) => `<option>${ShareUI.esc(f)}</option>`)].join("");
+    sel.onchange = () => { working = aclsOf(current()); renderAcls(); };
+  };
+
+  const aclsOf = (f) => data.acls.filter((a) => a.folder === f)
+    .map((a) => ({ ...a }));
+
+  const renderAcls = () => {
+    document.getElementById("acls").innerHTML = working.length
+      ? working.map((a, i) => `<tr>
+          <td>${ShareUI.esc(a.principal)}</td>
+          <td>${a.read ? "✔" : "—"}</td>
+          <td>${a.write ? "✔" : "—"}</td>
+          <td>${a.delete ? "✔" : "—"}</td>
+          <td><a data-i="${i}" style="color:var(--bad);cursor:pointer">quitar</a></td>
+        </tr>`).join("")
+      : `<tr><td colspan="5" class="sui-mut">sin ACL — rige el rol por defecto</td></tr>`;
+    document.querySelectorAll("#acls a[data-i]").forEach((a) =>
+      (a.onclick = () => { working.splice(Number(a.dataset.i), 1); renderAcls(); }));
+    document.getElementById("fnote").textContent =
+      `${working.length} ACL${working.length === 1 ? "" : "s"} en ${current()}`;
+  };
+
+  document.getElementById("add").onclick = () => {
+    working.push({
+      folder: current(),
+      principal: document.getElementById("prin").value,
+      read: document.getElementById("cr").checked,
+      write: document.getElementById("cw").checked,
+      delete: document.getElementById("cd").checked,
+    });
+    renderAcls();
+  };
+
+  document.getElementById("save").onclick = async () => {
+    try {
+      await ShareUI.api("/api/v1/share/permissions/folder", {
+        method: "PUT",
+        body: JSON.stringify({ folder: current(), acls: working }),
+      });
+      ShareUI.msg(msg, `ACLs de ${current()} guardadas y selladas`, "ok");
+      load();
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  const load = async () => {
+    try {
+      data = await ShareUI.api("/api/v1/share/permissions");
+      renderFolders();
+      renderPrins();
+      working = aclsOf(current());
+      renderAcls();
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+  load();
+});
+</script>
+</body>
+</html>

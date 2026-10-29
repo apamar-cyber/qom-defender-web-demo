@@ -1,0 +1,451 @@
+<!doctype html>
+<!-- qom Compliance — dos vistas honestas del cumplimiento:
+     1. Cobertura derivada: controles ISO 27001 que el appliance cubre
+        EN VIVO (calculado de señales reales, no declarado).
+     2. SoA declarado: los 93 controles Annex A con el estado que el
+        operador/auditor declara (persistido en SQLite, editable).
+     3. Políticas del appliance: aplicadas vs sin aplicar.
+     "autodiagnóstico — nunca certificación". -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom Compliance</title>
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --bg:#0b1420; --card:#152233; --card2:#1a2d42; --ink:#d7e3ef;
+  --dim:#7f95ab; --mut:#243447; --acc:#4a7cb0; --warn:#c4a35a; --bad:#c07a7a;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;font-size:13px}
+.wrap{max-width:1200px;margin:0 auto;padding:1.2rem}
+.top{display:flex;justify-content:space-between;align-items:center;
+  flex-wrap:wrap;gap:.8rem;margin-bottom:1rem}
+.brand{font-size:1.35rem;font-weight:700}
+.brand em{color:var(--acc);font-style:normal}
+
+.card{background:var(--card);border:1px solid var(--mut);border-radius:8px;
+  padding:1rem 1.2rem;margin-bottom:1rem}
+.card h3{color:var(--acc);margin:.1rem 0 .8rem;font-size:.9rem}
+.report{display:flex;gap:1.4rem;flex-wrap:wrap;font-size:.78rem}
+.report .stat{text-align:center}
+.report .num{font-size:1.5rem;font-weight:700;color:var(--acc)}
+.report .lab{color:var(--dim);font-size:.65rem}
+.warnbadge{background:#3a2c10;border:1px solid var(--warn);color:var(--warn);
+  border-radius:6px;padding:.4rem .8rem;font-size:.72rem;margin-top:.6rem;
+  display:inline-block}
+table{width:100%;border-collapse:collapse;font-size:.72rem}
+th{color:var(--dim);text-align:left;padding:.3rem .4rem;font-weight:400;
+  border-bottom:1px solid var(--mut)}
+td{padding:.3rem .4rem;border-bottom:1px dashed var(--mut);
+  vertical-align:top}
+tr:hover td{background:var(--card2)}
+.badge{display:inline-block;padding:.1rem .5rem;border-radius:.6rem;
+  font-size:.68rem;font-weight:700}
+.badge.covered{background:#0d3320;color:var(--acc)}
+.badge.partial{background:#3a2c10;color:var(--warn)}
+.badge.absent{background:#3a1520;color:var(--bad)}
+select.st{background:var(--card2);color:var(--ink);border:1px solid var(--mut);
+  border-radius:4px;font-family:inherit;font-size:.7rem;padding:.15rem .3rem}
+select.st:disabled{opacity:.55}
+.clause{color:var(--dim);font-size:.72rem;font-weight:700;
+  padding:.55rem 0 .2rem;text-transform:uppercase;letter-spacing:.06em}
+.polcols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem}
+@media(max-width:800px){.polcols{grid-template-columns:1fr}}
+.polcol h4{margin:.1rem 0 .5rem;font-size:.75rem}
+.polcol.ok h4{color:var(--acc)} .polcol.no h4{color:var(--bad)}
+.polcol.info h4{color:var(--dim)}
+.pol{padding:.35rem 0;border-bottom:1px dashed var(--mut);font-size:.72rem}
+.pol .d{color:var(--dim);font-size:.66rem}
+.note{color:var(--dim);font-size:.7rem;line-height:1.5}
+tr.ctl{cursor:pointer}
+tr.ctl:hover td{background:var(--card2)}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;
+  align-items:center;justify-content:center;z-index:50}
+#modal.open{display:flex}
+#modal .box{background:var(--card);border:1px solid var(--acc);border-radius:10px;
+  max-width:620px;width:92%;max-height:80vh;overflow:auto;padding:1.2rem 1.4rem}
+#modal .box h3{color:var(--acc);margin:.1rem 0 .2rem}
+#modal .cid{color:var(--dim);font-size:.7rem}
+#modal .desc{margin:.7rem 0;font-size:.8rem;line-height:1.6}
+#modal .kv{display:flex;justify-content:space-between;padding:.25rem 0;
+  border-bottom:1px dashed var(--mut);font-size:.75rem}
+#modal .kv .k{color:var(--dim)}
+#modal .close{float:right;background:none;border:1px solid var(--mut);
+  color:var(--ink);border-radius:4px;padding:.15rem .6rem;cursor:pointer;
+  font-family:inherit}
+</style>
+  <link rel="stylesheet" href="/assets/ui-kit.css">
+  <script src="/assets/ui-kit.js" nonce="__CSP_NONCE__"></script>
+</head>
+<body>
+<header>
+  <div class="mark">QC</div>
+  <h1>Qom Compliance</h1>
+</header>
+<div class="wrap">
+
+  <div id="uk-strip"></div>
+
+  <div class="card" >
+    <h3>ISO 27001:2022 — Statement of Applicability (declarado)</h3>
+    <div class="report" id="soaReport"><span class="note">cargando…</span></div>
+    <div class="warnbadge">autodiagnóstico — una herramienta no certifica; el
+    sello <b>certified</b> solo lo da un auditor externo</div>
+  </div>
+
+  <div class="card">
+    <h3>Cobertura derivada del appliance (en vivo)</h3>
+    <p class="note">Qué controles el <b>producto</b> cubre hoy, calculado del
+    estado real — no lo que el operador declara. Distinto del SoA de abajo.</p>
+    <table id="isoTable"><tbody></tbody></table>
+  </div>
+
+  <div class="card">
+    <h3>Cobertura MITRE ATT&amp;CK — detección real</h3>
+    <p class="note">Técnicas Enterprise con detector en producción
+    (regla Sigma <b>production</b> o detector nativo <code>native:*</code>)
+    sobre el catálogo ATT&amp;CK completo — derivado del estado vivo,
+    no declarado. <code>candidate</code> = regla en simulación pendiente
+    de promoción.</p>
+    <div class="report" id="mitreSummary"><span class="note">cargando…</span></div>
+    <table id="mitreMatrix"><tbody></tbody></table>
+    <p class="note" id="mitreGapNote"></p>
+  </div>
+
+  <div class="card">
+    <h3>SoA declarado — controles Annex A</h3>
+    <p class="note">Estado que declara el operador/auditor (persistido en
+    SQLite). Solo <b>operator+</b> puede cambiar el estado — todo cambio
+    queda auditado.</p>
+    <div id="soaList"><span class="note">cargando…</span></div>
+  </div>
+
+  <div class="card">
+    <h3>Políticas del appliance</h3>
+    <p class="note">Controles internos del propio QOM Defender: aplicadas,
+    sin aplicar e informativas — derivadas del estado vivo.</p>
+    <div class="polcols">
+      <div class="polcol ok"><h4>Aplicadas</h4><div id="polOk"></div></div>
+      <div class="polcol no"><h4>Sin aplicar</h4><div id="polNo"></div></div>
+      <div class="polcol info"><h4>Informativas</h4><div id="polNa"></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Marco legal y reglamentario — Argentina</h3>
+    <p class="note">Leyes, disposiciones y marcos sectoriales argentinos
+    relevantes a seguridad de la información. Clic en cada una para su
+    descripción. <b>Referencia informativa — no constituye asesoría legal.</b>
+    La aplicabilidad de cada norma depende del alcance y contexto de la
+    instalación del cliente: esta sección es orientativa y no determina
+    obligaciones. Las marcadas <span class="badge covered">aplica al rubro</span>
+    son las sugeridas para el sector configurado en /setup/.</p>
+    <table id="regsList"><tbody></tbody></table>
+  </div>
+</div>
+
+<div id="modal"><div class="box">
+  <button class="close" type="button" id="modal-close">cerrar ×</button>
+  <div class="cid" id="m-ctl"></div>
+  <h3 id="m-title"></h3>
+  <div class="desc" id="m-desc"></div>
+  <div id="m-meta"></div>
+</div></div>
+
+<script nonce="__CSP_NONCE__">
+const el = id => document.getElementById(id);
+el("modal-close")?.addEventListener("click", () => el("modal").classList.remove("open"));
+const esc = s => String(s ?? "").replace(/[&<>"]/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const STATUS = ["NotImplemented", "Partial", "Implemented", "Verified", "NotApplicable"];
+
+async function load(){
+  // Reporte SoA + entradas
+  try {
+    const [rep, ent, posture, regs, org, mitre] = await Promise.all([
+      fetch("/api/v1/soa/report", {credentials:"same-origin"}).then(r => r.json()),
+      fetch("/api/v1/soa/entries", {credentials:"same-origin"}).then(r => r.json()),
+      fetch("/api/v1/posture", {credentials:"same-origin"}).then(r => r.json()),
+      fetch("/api/v1/regs/ar", {credentials:"same-origin"}).then(r => r.json()),
+      fetch("/api/v1/org", {credentials:"same-origin"}).then(r => r.json()),
+      fetch("/api/v1/detection/mitre", {credentials:"same-origin"}).then(r => r.json()),
+    ]);
+    renderReport(rep.report || rep);
+    renderEntries(ent.entries || []);
+    renderIso(posture.iso_derived || []);
+    renderPolicies(posture.policies || []);
+    renderRegs(regs.regs || [], (org && org.sector) || "general");
+    renderMitre(mitre);
+    // Tira SaaS de resumen — cobertura SoA real, sin inflar.
+    const U = window.QomUI;
+    if (U) {
+      const rep2 = rep.report || rep;
+      const isoList = posture.iso_derived || [];
+      const covered = isoList.filter(i => i.state === "covered").length;
+      U.kpis("uk-strip", [
+        { icon: "doc", label: "Controles SoA", value: rep2.total_controls ?? "—", foot: "ISO 27001:2022 declarado" },
+        { ring: rep2.coverage_pct ?? 0, label: "Cobertura", value: (rep2.coverage_pct ?? 0).toFixed(0) + "%", foot: `${rep2.implemented ?? 0} implementados · ${rep2.partial ?? 0} parciales` },
+        { icon: "check", tint: "var(--ok)", label: "Capacidades ISO", value: covered, foot: `de ${isoList.length} cubiertas por el producto` },
+        { icon: "grid", label: "Normativa", value: (regs.regs || []).length, foot: `rubro: ${(org && org.sector) || "general"}` },
+      ]);
+    }
+  } catch(e) {
+    el("soaReport").innerHTML = `<span class="note">sin datos (${esc(e.message||e)})</span>`;
+  }
+}
+
+function renderReport(r){
+  const stats = [
+    [r.total_controls ?? "—", "controles"],
+    [r.implemented ?? "—", "implementados"],
+    [r.partial ?? "—", "parciales"],
+    [r.not_implemented ?? "—", "sin implementar"],
+    [r.not_applicable ?? "—", "no aplican"],
+    [((r.coverage_pct ?? 0)).toFixed(0) + "%", "cobertura"],
+  ];
+  el("soaReport").innerHTML = stats.map(([n, l]) =>
+    `<div class="stat"><div class="num">${esc(n)}</div><div class="lab">${esc(l)}</div></div>`).join("");
+}
+
+function renderIso(list){
+  window._isoMap = {};
+  for (const i of list) window._isoMap[i.control] = i;
+  const cls = { covered: "covered", partial: "partial", absent: "absent" };
+  const lbl = { covered: "cubierto", partial: "parcial", absent: "no cubierto" };
+  el("isoTable").querySelector("tbody").innerHTML =
+    `<tr><th>Control</th><th>Qué</th><th>Capacidad del producto</th><th>Estado</th></tr>` +
+    list.map(i => `<tr>
+      <td>${esc(i.control)}</td><td>${esc(i.title)}</td>
+      <td class="note">${esc(i.feature)}</td>
+      <td><span class="badge ${cls[i.state] || "absent"}">${lbl[i.state] || i.state}</span></td>
+    </tr>`).join("");
+}
+
+function renderMitre(m){
+  if (!m || !m.matrix) {
+    el("mitreSummary").innerHTML = '<span class="note">sin datos de matriz</span>';
+    return;
+  }
+  const total = m.catalog_size ?? (m.catalog && m.catalog.total) ?? 0;
+  const covered = m.covered_production ?? 0;
+  const gaps = m.gaps || {};
+  const noRules = (gaps.no_rules || []).length;
+  const pending = (gaps.promotion_pending || []).length;
+  const pct = total ? (100 * covered / total).toFixed(1) : "0.0";
+  const src = (m.catalog && m.catalog.stix && m.catalog.stix.spec_version) || "";
+  el("mitreSummary").innerHTML = [
+    [covered, "técnicas cubiertas"],
+    [total, "catálogo ATT&CK"],
+    [pct + "%", "cobertura"],
+    [noRules, "sin reglas"],
+    [pending, "pendientes de promoción"],
+  ].map(([n, l]) =>
+    `<div class="stat"><div class="num">${esc(n)}</div><div class="lab">${esc(l)}</div></div>`).join("");
+  const rows = (m.matrix || []).map(t => {
+    const n = (t.techniques || []).length;
+    const c = t.covered_production ?? 0;
+    const w = n ? Math.round(100 * c / n) : 0;
+    const cls = c === 0 ? "absent" : (c < n / 2 ? "partial" : "covered");
+    return `<tr><td style="white-space:nowrap">${esc(t.tactic)}</td>
+      <td class="note">${esc(t.tactic_id || "")}</td>
+      <td><span class="badge ${cls}">${c}/${n}</span></td>
+      <td class="note" style="width:40%"><div style="background:var(--line,#333);height:6px;border-radius:3px"><div style="width:${w}%;height:6px;border-radius:3px;background:var(--accent,#5af)"></div></div></td></tr>`;
+  }).join("");
+  el("mitreMatrix").querySelector("tbody").innerHTML =
+    `<tr><th>Táctica</th><th>ID</th><th>Producción</th><th></th></tr>` + rows;
+  el("mitreGapNote").textContent = src
+    ? `Catálogo ATT&CK v${src} — gaps priorizados por frecuencia observada y perfil de amenaza.`
+    : "";
+}
+
+function renderEntries(entries){
+  if (!entries.length) {
+    el("soaList").innerHTML = '<span class="note">sin entradas — el baseline se carga al primer boot</span>';
+    return;
+  }
+  window._entries = {};
+  for (const e of entries) window._entries[e.control] = e;
+  const groups = {};
+  for (const e of entries) {
+    const clause = e.control.split(".").slice(0, 2).join(".");
+    (groups[clause] = groups[clause] || []).push(e);
+  }
+  el("soaList").innerHTML = Object.entries(groups).map(([clause, list]) => {
+    const rows = list.map(e => `<tr class="ctl" data-ctl="${esc(e.control)}">
+      <td style="white-space:nowrap">${esc(e.control)}</td>
+      <td class="note">${esc(e.title || "")}</td>
+      <td><select class="st" data-ctl="${esc(e.control)}">${STATUS.map(s =>
+        `<option ${s === e.status ? "selected" : ""}>${s}</option>`).join("")}</select></td>
+      <td class="note">${esc(e.evidence_ref || "")}</td>
+    </tr>`).join("");
+    return `<div class="clause">${esc(clause)}</div><table>${rows}</table>`;
+  }).join("");
+  el("soaList").querySelectorAll("tr.ctl").forEach(tr => {
+    tr.onclick = ev => {
+      if (ev.target.tagName === "SELECT" || ev.target.tagName === "OPTION") return;
+      openCtl(tr.dataset.ctl);
+    };
+  });
+  el("soaList").querySelectorAll("select.st").forEach(sel => {
+    sel.onclick = ev => ev.stopPropagation();
+    sel.onchange = async () => {
+      sel.disabled = true;
+      try {
+        await fetch("/api/v1/soa", {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ control: sel.dataset.ctl, status: sel.value }),
+        });
+      } finally { sel.disabled = false; load(); }
+    };
+  });
+}
+
+function openCtl(id){
+  const e = (window._entries || {})[id];
+  if (!e) return;
+  const d = (window._isoMap || {})[id];
+  const lbl = { covered: "cubierto en vivo", partial: "parcial en vivo", absent: "no cubierto por el producto" };
+  showModal(id, e.title || "", e.description || "(sin descripción)", [
+    ["estado declarado", esc(e.status)],
+    ["evidencia", esc(e.evidence_ref || "—")],
+    ["actualizado", esc(e.updated_at || "—")],
+    d ? ["cobertura del producto", esc(lbl[d.state] || d.state) + " — " + esc(d.feature)] : null,
+  ].filter(Boolean));
+}
+
+function showModal(cid, title, desc, pairs){
+  el("m-ctl").textContent = cid;
+  el("m-title").textContent = title;
+  el("m-desc").textContent = desc;
+  el("m-meta").innerHTML = pairs.map(([k, v]) =>
+    `<div class="kv"><span class="k">${k}</span><span>${v}</span></div>`).join("");
+  el("modal").classList.add("open");
+}
+
+function renderRegs(regs, sector){
+  window._regs = {};
+  for (const r of regs) window._regs[r.id] = r;
+  const mine = r => (r.sectors || []).indexOf(sector) >= 0;
+  const ordered = regs.slice().sort((a, b) =>
+    (mine(b) ? 1 : 0) - (mine(a) ? 1 : 0));
+  el("regsList").querySelector("tbody").innerHTML =
+    `<tr><th>Norma</th><th>Nombre</th><th>Ámbito</th></tr>` +
+    ordered.map(r => `<tr class="ctl" data-reg="${esc(r.id)}">
+      <td style="white-space:nowrap">${esc(r.id)}</td>
+      <td class="note">${esc(r.name)}</td>
+      <td>${mine(r) ? '<span class="badge covered">aplica al rubro</span> ' : ""}<span class="badge partial">${esc(r.scope)}</span></td>
+    </tr>`).join("");
+  el("regsList").querySelectorAll("tr.ctl").forEach(tr => {
+    tr.onclick = () => {
+      const r = (window._regs || {})[tr.dataset.reg];
+      if (!r) return;
+      showModal(r.id, r.name, r.description || "(sin descripción)",
+        [["ámbito", esc(r.scope)]]);
+      if (r.id === "Disp. AAIP 47-E/2018") renderAaip47();
+    };
+  });
+}
+
+function renderAaip47(){
+  el("m-meta").innerHTML += `<div style="margin-top:.8rem">
+    <div class="k" style="color:var(--dim);font-size:.7rem">GENERAR NOTIFICACIÓN SELLADA</div>
+    <div class="note" style="margin:.3rem 0">Documenta el incidente y sella el
+    reporte en la cadena de evidencia — queda probado qué se declaró y cuándo
+    (firma electrónica, Ley 25.506 art. 5). Plazo legal: 48 h.</div>
+    <textarea id="a47-desc" placeholder="descripción del incidente *" style="width:100%;height:60px;background:var(--card2);color:var(--ink);border:1px solid var(--mut);border-radius:4px;font-family:inherit;font-size:.75rem;padding:.4rem"></textarea>
+    <input id="a47-datos" placeholder="datos afectados (ej: emails, DNI, historia clínica)" style="width:100%;margin-top:.3rem;background:var(--card2);color:var(--ink);border:1px solid var(--mut);border-radius:4px;font-family:inherit;font-size:.75rem;padding:.3rem">
+    <input id="a47-tit" type="number" placeholder="titulares estimados" style="width:100%;margin-top:.3rem;background:var(--card2);color:var(--ink);border:1px solid var(--mut);border-radius:4px;font-family:inherit;font-size:.75rem;padding:.3rem">
+    <input id="a47-med" placeholder="medidas correctivas" style="width:100%;margin-top:.3rem;background:var(--card2);color:var(--ink);border:1px solid var(--mut);border-radius:4px;font-family:inherit;font-size:.75rem;padding:.3rem">
+    <button id="a47-go" class="close" style="float:none;margin-top:.4rem;border-color:var(--acc);color:var(--acc)">generar y sellar →</button>
+    <div id="a47-out" class="note" style="margin-top:.4rem"></div>
+    <div class="k" style="color:var(--dim);font-size:.7rem;margin-top:.7rem">REPORTES — ciclo generado → presentado → confirmado</div>
+    <div id="a47-list"></div>
+  </div>`;
+  loadAaip47List();
+  el("a47-go").onclick = async () => {
+    const btn = el("a47-go"); btn.disabled = true;
+    try {
+      const r = await fetch("/api/v1/regs/aaip47", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          descripcion: el("a47-desc").value,
+          datos_afectados: el("a47-datos").value,
+          titulares_estimados: Number(el("a47-tit").value) || 0,
+          medidas: el("a47-med").value,
+        }),
+      });
+      const b = await r.json();
+      el("a47-out").innerHTML = r.ok
+        ? `✔ sellado — id <code>${esc(b.id)}</code><br>hash <code style="font-size:.65rem">${esc(b.seal_hash)}</code><br>${esc(b.note)}`
+        : `✖ ${esc(b.error || "error")}`;
+      if (r.ok) loadAaip47List();
+    } catch(e) { el("a47-out").textContent = "error de red"; }
+    finally { btn.disabled = false; }
+  };
+}
+
+async function loadAaip47List(){
+  const box = el("a47-list");
+  if (!box) return;
+  const st = { generado: "generado", presentado: "presentado TAD", confirmado: "confirmado AAIP" };
+  const cls = { generado: "partial", presentado: "covered", confirmado: "covered" };
+  try {
+    const r = await fetch("/api/v1/regs/aaip47", {credentials:"same-origin"}).then(r=>r.json());
+    const list = r.reports || [];
+    box.innerHTML = list.length ? list.map(p => `<div class="kv" style="align-items:center">
+      <span class="k">${esc(p.id)}<br><span style="font-size:.62rem">${esc(p.created_at||"")}</span></span>
+      <span style="text-align:right">
+        <span class="badge ${cls[p.status]||"partial"}">${st[p.status]||esc(p.status)}</span>
+        ${p.tad_expediente ? `<br><span style="font-size:.62rem">exp: ${esc(p.tad_expediente)}</span>` : ""}
+        ${p.status === "generado" ? `<br><button class="close a47-adv" data-id="${esc(p.id)}" data-to="presentado" style="font-size:.62rem;margin-top:.2rem">marcar presentado →</button>` : ""}
+        ${p.status === "presentado" ? `<br><button class="close a47-adv" data-id="${esc(p.id)}" data-to="confirmado" style="font-size:.62rem;margin-top:.2rem">confirmar expediente →</button>` : ""}
+      </span></div>`).join("") : '<div class="note">sin reportes generados</div>';
+    box.querySelectorAll(".a47-adv").forEach(b => {
+      b.onclick = async () => {
+        const exp = prompt(b.dataset.to === "presentado"
+          ? "Número de expediente TAD (si ya lo tenés):" : "Número de expediente asignado por AAIP:");
+        const acuse = b.dataset.to === "presentado" ? prompt("Referencia del acuse de recibo (opcional):") : null;
+        if (b.dataset.to === "confirmado" && !(exp && exp.trim())) return;
+        const r = await fetch("/api/v1/regs/aaip47/status", {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: b.dataset.id, status: b.dataset.to,
+            tad_expediente: exp || undefined, acuse: acuse || undefined }),
+        });
+        if (!r.ok) { const e = await r.json().catch(()=>({})); alert(e.error || "error"); }
+        loadAaip47List();
+      };
+    });
+  } catch(e) { box.innerHTML = '<div class="note">sin datos</div>'; }
+}
+
+function renderPolicies(policies){
+  const item = p => `<div class="pol"><b>${esc(p.title)}</b><div class="d">${esc(p.detail)}</div></div>`;
+  el("polOk").innerHTML = policies.filter(p => p.applied === true).map(item).join("")
+    || '<div class="pol"><span class="d">—</span></div>';
+  el("polNo").innerHTML = policies.filter(p => p.applied === false).map(item).join("")
+    || '<div class="pol"><span class="d">—</span></div>';
+  el("polNa").innerHTML = policies.filter(p => p.applied === null).map(item).join("")
+    || '<div class="pol"><span class="d">—</span></div>';
+}
+
+document.getElementById("modal").onclick = ev => {
+  if (ev.target.id === "modal") ev.target.classList.remove("open");
+};
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape") document.getElementById("modal").classList.remove("open");
+});
+
+load();
+setInterval(load, 60000);
+</script>
+</body>
+</html>

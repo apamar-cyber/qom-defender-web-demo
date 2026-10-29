@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qom Analyze — QOM Defender</title>
+  <script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<style>
+  :root {
+    --bg: #0b1420; --dark: #101a28; --card: #152233; --elev: #1a2d42;
+    --line: #243447; --text: #d7e3ef; --muted: #7f95ab; --sec: #9eb6cf;
+    --acc: #4a7cb0; --acc2: #5a8fc0; --ok: #6aa88a; --bad: #c07a7a;
+    --warn: #c4a35a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
+    font: 13.5px/1.42 "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: .45rem; padding: 0 .7rem;
+    background: rgba(11, 20, 32, .88); border-bottom: 1px solid var(--line); }
+  .mark { width: 18px; height: 18px; border-radius: 4px; background: var(--acc);
+    display: flex; align-items: center; justify-content: center; font-weight: 700; color: #f4f8fc; font-size: .5rem; }
+  header h1 { font-size: 1rem; margin: 0; }
+  header .sub { color: var(--muted); font-size: .72rem; margin: 0; }
+  .foot { border-top: 1px solid var(--line); color: var(--muted);
+    font-size: .68rem; text-align: center; padding: .9rem 0 .4rem;
+    margin-top: 1.5rem; letter-spacing: .03em; }
+  header .right { margin-left: auto; color: var(--muted); font-size: .72rem; }
+  main { padding: 1rem; max-width: 1400px; margin: 0 auto; }
+  .hint { color: var(--muted); font-size: .78rem; }
+  h3.feed { font-size: .88rem; color: var(--acc2); margin: .9rem 0 .5rem; }
+
+  .an-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: .7rem; }
+  .an-card { background: var(--card); border: 1px solid var(--line); border-radius: 4px;
+    padding: .75rem .8rem; border-left: 3px solid var(--acc2); border-top: 0; }
+  .an-card.st-ok { border-top-color: var(--ok); }
+  .an-card.st-warn { border-top-color: var(--warn); }
+  .an-card.st-down { border-top-color: var(--bad); }
+  .an-head { display: flex; align-items: center; gap: .5rem; }
+  .an-head b { font-size: .88rem; }
+  .an-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; background: var(--acc2); }
+  .an-dot.st-ok { background: var(--ok); box-shadow: 0 0 6px rgba(106,168,138,.6); }
+  .an-dot.st-warn { background: var(--warn); box-shadow: 0 0 6px rgba(196,163,90,.6); }
+  .an-dot.st-down { background: var(--bad); box-shadow: 0 0 6px rgba(192,122,122,.6); }
+  .an-state { margin-left: auto; font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .an-state.st-ok { color: var(--ok); } .an-state.st-warn { color: var(--warn); }
+  .an-state.st-down { color: var(--bad); }
+  .an-detail { color: var(--muted); font-size: .72rem; margin: .3rem 0 .45rem; }
+  .an-svc { display: flex; gap: .45rem; align-items: baseline; margin-top: .3rem; font-size: .73rem; }
+  .an-svc .an-dot { width: 7px; height: 7px; }
+  .an-svc .an-dot.st-info { background: var(--acc2); }
+  .an-svc-name { color: var(--sec); font-weight: 600; white-space: nowrap; }
+  .an-svc-desc { color: var(--muted); }
+  .an-updates { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: .7rem; margin: .9rem 0; }
+  .an-upd { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: .8rem; }
+  .an-upd h4 { margin: 0 0 .4rem; font-size: .85rem; color: var(--sec); }
+  .an-upd .num { font-size: 1.6rem; font-weight: 700; }
+  .an-upd .num.hot { color: var(--warn); }
+  .an-upd small { color: var(--muted); font-size: .7rem; display: block; margin-top: .3rem; }
+  .an-global { display: flex; align-items: center; gap: .6rem; background: var(--card);
+    border: 1px solid var(--line); border-radius: 4px; padding: .7rem .9rem; margin-bottom: .8rem; }
+  .an-global .an-dot { width: 16px; height: 16px; }
+  .an-global b { font-size: 1rem; }
+  .an-global span { color: var(--muted); font-size: .75rem; }
+
+  .an-def { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: .7rem; margin: .9rem 0; }
+  .an-defcard { background: var(--card); border: 1px solid var(--line); border-radius: 4px;
+    padding: .8rem; border-left: 3px solid var(--acc); border-top: 0; }
+  .an-defcard.st-ok { border-top-color: var(--ok); }
+  .an-defcard.st-down { border-top-color: var(--bad); }
+  .an-defcard h4 { margin: 0 0 .45rem; font-size: .85rem; color: var(--sec); }
+  .an-defcard .mono { font-family: ui-monospace, monospace; font-size: .72rem; color: var(--acc2); word-break: break-all; }
+  .an-cov { margin: .3rem 0; font-size: .73rem; }
+  .an-cov .an-svc-name { color: var(--sec); font-weight: 600; }
+  .an-cov .eng { color: var(--acc2); font-size: .68rem; }
+  .an-cov .an-svc-desc { color: var(--muted); display: block; margin-top: .1rem; }
+</style>
+  <link rel="stylesheet" href="/assets/ui-kit.css">
+  <script src="/assets/ui-kit.js" nonce="__CSP_NONCE__"></script>
+</head>
+<body>
+<header>
+  <div class="mark">QD</div>
+  <div>
+    <h1>Qom Analyze</h1>
+    <p class="sub">Salud del SO + diagnósticos + updates · QOM Defender</p>
+  </div>
+<div class="right" id="clock"></div>
+</header>
+<div id="uk-strip" style="max-width:1400px;margin:0 auto;padding:0 1rem"></div>
+<main id="root"><p class="hint">Sondeando el sistema…</p></main>
+
+<script nonce="__CSP_NONCE__">
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function sessToken() {
+  const s = sessionStorage.getItem("qom_session");
+  if (s) return s;
+  const m = document.cookie.match(/(?:^|;\s*)qom_session=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+async function j(url, opt) {
+  const headers = Object.assign({ "content-type": "application/json" }, (opt && opt.headers) || {});
+  const s = sessToken();
+  if (s) headers.Authorization = "Bearer " + s;
+  const r = await fetch(url, Object.assign({ credentials: "same-origin" }, opt || {}, { headers }));
+  const t = await r.json().catch(() => ({ error: r.statusText }));
+  if (r.status === 401) throw new Error("sesión requerida — iniciá sesión en la consola QOM Defender");
+  if (!r.ok) throw new Error(t.error || r.statusText);
+  return t;
+}
+
+const AN_STATE_CLASS = { ok: "st-ok", warn: "st-warn", atencion: "st-warn", down: "st-down", degradado: "st-down", unknown: "st-unknown" };
+const AN_STATE_LABEL = { ok: "OK", warn: "ATENCIÓN", atencion: "ATENCIÓN", down: "SIN SERVICIO", degradado: "DEGRADADO", unknown: "SIN DATOS" };
+const anStateCls = (st) => AN_STATE_CLASS[st] || "st-unknown";
+const anStateTxt = (st) => AN_STATE_LABEL[st] || String(st || "").toUpperCase();
+
+// Benchmark: cache propio — el poll de 15 s reinyecta este HTML sin
+// recorrer el endpoint ni disparar corridas.
+let benchHtml = `<div class="an-defcard"><h4>Benchmark del sistema</h4>
+  <div class="an-svc"><span class="an-dot"></span><span class="an-svc-desc">cargando…</span></div></div>`;
+let benchBusy = false;
+
+const BENCH_LABELS = {
+  sha256_1mib: "Hash SHA-256",
+  chain_append_sin_sello: "Cadena de evidencia (sin sello)",
+  chain_append_sellado: "Evidencia sellada Ed25519",
+  seal_verify_ed25519: "Verificación de sellos",
+  worm_commit_fsync: "Commits WORM a disco",
+};
+
+function benchCard(doc) {
+  const rep = doc && doc.latest ? doc.latest : doc; // compat formato viejo
+  const hist = (doc && doc.history) || (rep ? [rep] : []);
+  const btn = `<button id="bench-run" style="margin-top:.5rem;background:var(--acc);color:#f4f8fc;border:0;border-radius:4px;padding:.35rem .8rem;font-weight:600;cursor:pointer">${rep && rep.generated_at ? "Medir de nuevo" : "Ejecutar benchmark"}</button>`;
+  if (!rep || rep.available === false) {
+    return `<div class="an-defcard"><h4>Benchmark del sistema</h4>
+      <div class="an-svc"><span class="an-dot st-warn"></span><span class="an-svc-desc">${esc((rep && rep.note) || "todavía no se midió el rendimiento de este equipo")}</span></div>
+      <div class="an-cov"><span class="an-svc-desc">Mide la cadena de evidencia, los sellos y la escritura en disco del appliance. Ejecutalo cuando cambie el hardware (más RAM, placa PCIe 4, otro disco) para comparar.</span></div>
+      ${btn}</div>`;
+  }
+  const hw = rep.hardware || {};
+  const sys = rep.system_state || {};
+  const sysBits = [
+    sys.loadavg ? `carga ${sys.loadavg.map((x) => x.toFixed(2)).join(" / ")}` : null,
+    sys.mem_available_mb != null ? `${sys.mem_available_mb} MB libres` : null,
+    sys.cpu_temp_c != null ? `${sys.cpu_temp_c} °C` : null,
+  ].filter(Boolean).join(" · ");
+  const rows = (rep.benchmarks || []).map((b) => `<div class="an-svc"><span class="an-dot st-ok"></span>
+      <span class="an-svc-name">${esc(BENCH_LABELS[b.name] || b.name)}</span>
+      <span class="an-svc-desc">${Math.round(b.ops_per_sec).toLocaleString("es-AR")} ops/s${b.mb_per_sec != null ? ` · ${b.mb_per_sec.toFixed(1)} MB/s` : ""}${b.note ? ` — ${esc(b.note)}` : ""}</span></div>`).join("");
+  const histRows = hist.length > 1
+    ? `<small>Historial (últimas ${hist.length} mediciones):</small>` +
+      hist.slice(-10).map((h) => {
+        const sealed = ((h.benchmarks || []).find((b) => b.name === "chain_append_sellado") || {}).ops_per_sec;
+        const worm = ((h.benchmarks || []).find((b) => b.name === "worm_commit_fsync") || {}).ops_per_sec;
+        const cur = h.generated_at === rep.generated_at;
+        return `<div class="an-svc"><span class="an-dot ${cur ? "st-ok" : ""}"></span>
+          <span class="an-svc-name">${h.generated_at ? esc(new Date(h.generated_at).toLocaleDateString("es-AR")) : "?"}</span>
+          <span class="an-svc-desc">${sealed != null ? `${Math.round(sealed).toLocaleString("es-AR")} sell/s` : "—"} · ${worm != null ? `${Math.round(worm).toLocaleString("es-AR")} worm/s` : "—"}${(h.hardware || {}).cpu_model && h.hardware.cpu_model !== hw.cpu_model ? ` · ⚠ hardware distinto (${esc(h.hardware.cpu_model)})` : ""}</span></div>`;
+      }).join("")
+    : "";
+  return `<div class="an-defcard st-ok"><h4>Benchmark del sistema</h4>
+    <div class="an-svc"><span class="an-dot st-ok"></span><span class="an-svc-desc">${esc(hw.cpu_model || "CPU ?")} · ${hw.cpu_cores ?? "?"} núcleos · ${hw.ram_mb ?? "?"} MB RAM</span></div>
+    ${rows}
+    ${sysBits ? `<small>al medir: ${esc(sysBits)}</small>` : ""}
+    <small>medido ${rep.generated_at ? esc(new Date(rep.generated_at).toLocaleString("es-AR")) : "—"} · kernel ${esc(hw.kernel || "?")}</small>
+    ${histRows}
+    ${btn}</div>`;
+}
+
+function paintBench() {
+  const w = $("bench-wrap");
+  if (w) w.innerHTML = benchHtml;
+  else render();
+}
+
+async function loadBench() {
+  try {
+    const r = await j("/api/suite", { method: "POST", body: JSON.stringify({ id: "analyze", action: "benchmark" }) });
+    benchHtml = benchCard(r.module || null);
+  } catch (e) {
+    benchHtml = `<div class="an-defcard"><h4>Benchmark del sistema</h4>
+      <div class="an-svc"><span class="an-dot st-down"></span><span class="an-svc-desc">no se pudo leer la última medición</span></div></div>`;
+  }
+  paintBench();
+}
+
+async function runBench() {
+  if (benchBusy) return;
+  benchBusy = true;
+  benchHtml = `<div class="an-defcard"><h4>Benchmark del sistema</h4>
+    <div class="an-svc"><span class="an-dot st-warn"></span><span class="an-svc-desc">Midiendo… puede tardar unos segundos, no cierres esta página.</span></div></div>`;
+  paintBench();
+  try {
+    const r = await j("/api/suite", { method: "POST", body: JSON.stringify({ id: "analyze", action: "benchmark_run" }) });
+    benchHtml = benchCard(r.module || null);
+  } catch (e) {
+    benchHtml = `<div class="an-defcard st-down"><h4>Benchmark del sistema</h4>
+      <div class="an-svc"><span class="an-dot st-down"></span><span class="an-svc-desc">la medición falló: ${esc(e.message || e)}</span></div></div>`;
+  }
+  benchBusy = false;
+  paintBench();
+}
+
+document.addEventListener("click", (ev) => {
+  if (ev.target && ev.target.id === "bench-run") runBench();
+});
+
+function anSvcLine(sv) {
+  return `<div class="an-svc"><span class="an-dot ${anStateCls(sv.state)}"></span>
+    <span class="an-svc-name">${esc(sv.name)}</span>
+    <span class="an-svc-desc">${esc(sv.desc)}</span></div>`;
+}
+function anCard(c) {
+  const svcs = (c.services || []).map(anSvcLine).join("");
+  return `<div class="an-card ${anStateCls(c.state)}">
+    <div class="an-head"><span class="an-dot ${anStateCls(c.state)}"></span>
+      <b>${esc(c.name)}</b><span class="an-state ${anStateCls(c.state)}">${anStateTxt(c.state)}</span></div>
+    <div class="an-detail">${esc(c.detail || "")}</div>
+    ${svcs}
+  </div>`;
+}
+function anAge(secs) {
+  if (secs === null || secs === undefined) return "fecha desconocida";
+  if (secs < 3600) return `hace ${Math.max(1, Math.round(secs / 60))} min`;
+  if (secs < 86400) return `hace ${Math.round(secs / 3600)} h`;
+  return `hace ${Math.round(secs / 86400)} d`;
+}
+
+async function render() {
+  const root = $("root");
+  $("clock").textContent = new Date().toLocaleTimeString();
+  let compRes, updRes, stRes, defRes, vacRes;
+  try {
+    [compRes, updRes, stRes] = await Promise.all([
+      j("/api/suite", { method: "POST", body: JSON.stringify({ id: "analyze", action: "components" }) }),
+      j("/api/suite", { method: "POST", body: JSON.stringify({ id: "analyze", action: "updates" }) }),
+      j("/api/suite?id=analyze"),
+    ]);
+  } catch (e) {
+    root.innerHTML = `<p class="hint">No se pudo sondear el sistema: ${esc(e.message || e)}</p>`;
+    return;
+  }
+  // Defensas + vacuna: degradables — si fallan, el resto del tablero sigue.
+  [defRes, vacRes] = await Promise.all([
+    j("/api/suite", { method: "POST", body: JSON.stringify({ id: "analyze", action: "defenses" }) }).catch(() => null),
+    j("/api/qtroya/vaccine", { method: "POST", body: "{}" }).catch(() => null),
+  ]);
+  const comps = (compRes.module && compRes.module.components) || [];
+  const upd = updRes.module || {};
+  const st = stRes.module || {};
+  const ubu = upd.os || {};
+  const qom = upd.qomdefender || {};
+  const global = compRes.module ? compRes.module.global : st.global_state;
+  const def = (defRes && defRes.module) || {};
+  const cov = Array.isArray(def.coverage) ? def.coverage : [];
+  const ai = def.ai || {};
+  const aiUp = ai.ollama_soc === "up";
+  const av = cov.find((c) => /yara/i.test(c.engine || ""));
+
+  // Tira SaaS del tablero: salud real del sondeo de componentes.
+  const U = window.QomUI;
+  if (U) {
+    const okN = comps.filter((c) => c.state === "ok").length;
+    const warnN = comps.filter((c) => c.state === "warn" || c.state === "atencion").length;
+    const downN = comps.filter((c) => c.state === "down" || c.state === "degradado").length;
+    const updN = (ubu.upgradable || 0) + (qom.pending_packages || []).length;
+    const fp0 = vacRes && vacRes.fingerprint;
+    U.kpis("uk-strip", [
+      { ring: comps.length ? Math.round(100 * okN / comps.length) : 0, label: "Componentes sanos", value: `${okN}/${comps.length || "—"}`, foot: "sondeo real del SO" },
+      { icon: "clock", tint: warnN ? "var(--warn)" : "var(--ok)", label: "Atención", value: warnN, foot: warnN ? "degradados" : "sin degradados" },
+      { icon: "alert", tint: downN ? "var(--bad)" : "var(--ok)", label: "Sin servicio", value: downN, foot: downN ? "caídos" : "todo arriba" },
+      { icon: "box", tint: updN ? "var(--warn)" : "var(--ok)", label: "Updates", value: updN, foot: `${ubu.upgradable ?? "—"} SO · ${(qom.pending_packages || []).length} firmados` },
+      { icon: "shield", tint: fp0 ? "var(--ok)" : "var(--warn)", label: "Vacuna qTROYA", value: fp0 ? "activa" : "sin datos", foot: "HMAC de la imagen" },
+      { icon: "bolt", tint: aiUp ? "var(--ok)" : "var(--bad)", label: "IA local", value: aiUp ? "up" : "down", foot: "ollama SOC" },
+    ]);
+  }
+
+  let html = `<div class="an-global"><span class="an-dot ${anStateCls(global)}"></span>
+    <b>${anStateTxt(global)}</b>
+    <span>${st.diagnoses_active ?? 0} diagnóstico(s) activo(s) · ${st.critical ?? 0} crítico(s) · ${st.rules_loaded ?? "?"} reglas</span>
+    <span style="margin-left:auto;font-size:.68rem">actualizado ${new Date().toLocaleTimeString()}</span></div>`;
+
+  const pend = (qom.pending_packages || []);
+  html += `<div class="an-updates">
+    <div class="an-upd"><h4>SO QOM Defender — updates del sistema</h4>
+      <div class="num ${ubu.upgradable > 0 ? "hot" : ""}">${ubu.upgradable ?? "—"}</div>
+      <span style="font-size:.75rem;color:var(--muted)">paquetes actualizables${ubu.security != null ? ` · <b style="color:var(--bad)">${ubu.security} de seguridad</b>` : ""}</span>
+      ${ubu.reboot_required ? `<div style="color:var(--warn);font-size:.75rem;margin-top:.3rem">⚠ Reinicio pendiente (kernel/glibc actualizado)</div>` : ""}
+      <small>fuente: ${esc(ubu.source || "?")} · índice apt ${anAge(ubu.index_age_secs)}${ubu.note ? " — " + esc(ubu.note) : ""}</small>
+    </div>
+    <div class="an-upd"><h4>QOM Defender — canal firmado</h4>
+      <div style="font-size:.95rem">v<b>${esc(qom.current_version || "?")}</b> · canal <b>${esc(qom.channel || "stable")}</b></div>
+      ${pend.length
+        ? `<div class="num hot" style="margin-top:.2rem">${pend.length}</div>
+           <span style="font-size:.75rem;color:var(--muted)">paquete(s) firmado(s) pendiente(s) de aplicar:</span>
+           ${pend.map((pq) => `<div class="an-svc"><span class="an-dot st-warn"></span><span class="an-svc-name">${esc(pq.version_hint || pq.file)}</span><span class="an-svc-desc">${esc(pq.file)} · ${(pq.size_bytes / 1048576).toFixed(1)} MB</span></div>`).join("")}`
+        : `<div style="font-size:.75rem;color:var(--ok);margin-top:.3rem">✓ sin paquetes pendientes de aplicar</div>`}
+      ${qom.previous_version ? `<small>rollback disponible: v${esc(qom.previous_version)}</small>` : ""}
+      <small>${esc(qom.note || "")}</small>
+    </div>
+  </div>`;
+
+  // Defensas: vacunas qTROYA, cobertura de ataques, antivirus, IA.
+  const fp = vacRes && vacRes.fingerprint;
+  html += `<h3 class="feed">Defensas</h3><div class="an-def">`;
+  html += `<div class="an-defcard ${fp ? "st-ok" : "st-down"}"><h4>Vacunas qTROYA</h4>
+    ${fp
+      ? `<div class="an-svc"><span class="an-dot st-ok"></span><span class="an-svc-desc">activa — HMAC-SHA256 de la imagen</span></div>
+         <div class="mono">${esc(String(fp).slice(0, 32))}…</div>
+         <small>intervalo ${esc(vacRes.interval_hours ?? "?")} h · huella compartible por qMORSE (sin secreto)</small>`
+      : `<div class="an-svc"><span class="an-dot st-down"></span><span class="an-svc-desc">sin respuesta del endpoint de vacuna</span></div>`}
+    ${def.vaccine ? `<small>${esc(def.vaccine.note || "")}</small>` : ""}
+  </div>`;
+  html += `<div class="an-defcard"><h4>Qué ataques cubre</h4>
+    ${cov.length
+      ? cov.map((c) => `<div class="an-cov"><span class="an-svc-name">${esc(c.domain)}</span> <span class="eng">${esc(c.engine)}</span><span class="an-svc-desc">${esc(c.detail)}</span></div>`).join("")
+      : `<div class="an-svc"><span class="an-dot st-down"></span><span class="an-svc-desc">acción defenses sin datos</span></div>`}
+  </div>`;
+  html += `<div class="an-defcard ${av ? "" : "st-down"}"><h4>Antivirus / EDR</h4>
+    ${av
+      ? `<div class="an-svc"><span class="an-dot st-ok"></span><span class="an-svc-name">${esc(av.engine)}</span></div>
+         <div class="an-cov"><span class="an-svc-desc">${esc(av.detail)}</span></div>`
+      : `<div class="an-svc"><span class="an-dot st-down"></span><span class="an-svc-desc">motor YARA no reportado</span></div>`}
+  </div>`;
+  html += `<div class="an-defcard ${aiUp ? "st-ok" : "st-down"}"><h4>IA local</h4>
+    <div class="an-svc"><span class="an-dot ${aiUp ? "st-ok" : "st-down"}"></span>
+      <span class="an-svc-name">ollama SOC</span>
+      <span class="an-svc-desc">${esc(ai.ollama_detail || "sin datos")}</span></div>
+    <div class="an-cov"><span class="an-svc-desc">modelo ${esc(ai.model || "?")} · ${esc(ai.analyze_rules ?? "?")} reglas analyze · ${esc(ai.metric_series ?? "?")} series métricas${ai.analyze_eval_errors ? ` · <b style="color:var(--bad)">${ai.analyze_eval_errors} errores eval</b>` : ""}</span></div>
+  </div>`;
+  html += `</div>`;
+
+  html += `<h3 class="feed">Partes del sistema operativo</h3>`;
+  html += `<div class="an-grid">${comps.map(anCard).join("")}</div>`;
+
+  // Benchmark del sistema — contenido cacheado (no se recalcula en el poll).
+  html += `<h3 class="feed">Rendimiento del appliance</h3>`;
+  html += `<div class="an-def" id="bench-wrap">${benchHtml}</div>`;
+
+  const ds = Array.isArray(st.diagnoses) ? st.diagnoses : [];
+  if (ds.length) {
+    html += `<h3 class="feed">Diagnósticos activos</h3>`;
+    for (const d of ds) {
+      const sev = d.severity === "critical" ? "st-down" : d.severity === "warning" ? "st-warn" : "st-info";
+      const corr = d.correlation ? ` · correlación: ${esc(d.correlation.change.detail)}` : "";
+      html += `<div class="an-card ${sev}" style="margin-bottom:.5rem">
+        <div class="an-head"><span class="an-dot ${sev}"></span><b>${esc(d.symptom)}</b>
+        <span class="an-state ${sev}">${esc((d.state || "").toUpperCase())}</span></div>
+        <div class="an-detail">Causa raíz: ${esc(d.root_cause)}${corr}</div>
+        ${(d.evidence || []).map((ev) => `<div class="an-svc"><span class="an-dot st-ok"></span><span class="an-svc-desc">${esc(ev)}</span></div>`).join("")}
+        <div class="an-detail" style="margin-top:.3rem">${esc((d.recommendation || {}).text || "")}</div>
+      </div>`;
+    }
+  }
+  root.innerHTML = html;
+}
+
+render();
+loadBench();
+setInterval(render, 15000);
+</script>
+<footer class="foot">Diseñado y programado por @apamar - Sistema operativo de Ciberdefensa *QOM Defender * v.0.1.0 setiembre 2026</footer>
+</body>
+</html>

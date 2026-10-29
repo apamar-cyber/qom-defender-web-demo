@@ -1,0 +1,266 @@
+<!doctype html>
+<!-- qMail — correo interno sellado del appliance.
+     Gestión de cola persistente, envío de notificaciones y
+     trazabilidad judicial. Alimentado por /api/v1/mail/*. -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom Mail</title>
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --bg:#0b1420; --card:#152233; --card2:#1a2d42; --ink:#d7e3ef;
+  --dim:#7f95ab; --mut:#243447; --acc:#4a7cb0; --warn:#c4a35a; --bad:#c07a7a;
+  --blue:#60a5fa;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;font-size:13px}
+.wrap{max-width:1150px;margin:0 auto;padding:1.2rem}
+.top{display:flex;justify-content:space-between;align-items:baseline;
+  flex-wrap:wrap;gap:.8rem;margin-bottom:1rem}
+.brand{font-size:1.35rem;font-weight:700}
+.brand em{color:var(--acc);font-style:normal}
+.back{color:var(--acc);text-decoration:none;font-size:.8rem}
+.tabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem}
+.tab{background:var(--card);border:1px solid var(--mut);color:var(--dim);
+  padding:.45rem 1rem;border-radius:6px 6px 0 0;cursor:pointer;
+  font-family:inherit;font-size:.8rem}
+.tab.on{color:var(--acc);border-color:var(--acc);border-bottom-color:var(--card)}
+.sec{background:var(--card);border:1px solid var(--mut);border-radius:0 8px 8px;
+  padding:1rem 1.2rem;margin-bottom:1.2rem;min-height:8rem}
+.sec h2{margin:.1rem 0 .6rem;font-size:1rem;color:var(--acc)}
+.hint{color:var(--dim);font-size:.72rem;margin-bottom:.8rem;line-height:1.5}
+.badge{display:inline-block;background:var(--card2);border:1px solid var(--mut);
+  padding:.12rem .55rem;border-radius:10px;font-size:.65rem;color:var(--acc);
+  margin:.15rem .25rem .15rem 0;white-space:nowrap}
+.badge.warn{border-color:var(--warn);color:var(--warn)}
+.badge.bad{border-color:var(--bad);color:var(--bad)}
+.badge.dim{color:var(--dim)}
+.badge.blue{border-color:var(--blue);color:var(--blue)}
+table{width:100%;border-collapse:collapse;font-size:.75rem}
+th,td{padding:.4rem .5rem;border-bottom:1px solid var(--mut);text-align:left;vertical-align:top}
+th{color:var(--dim);font-weight:600;font-size:.66rem;text-transform:uppercase;
+  letter-spacing:.05em}
+.big{font-size:1.5rem;font-weight:700;color:var(--acc)}
+.big.warn{color:var(--warn)} .big.bad{color:var(--bad)}
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));
+  gap:.8rem;margin-bottom:.8rem}
+.kv .k{background:var(--card2);border:1px solid var(--mut);border-radius:6px;
+  padding:.6rem .8rem}
+.kv .k .lbl{color:var(--dim);font-size:.62rem;text-transform:uppercase;
+  letter-spacing:.05em}
+.kv .k .val{font-size:1rem;margin-top:.25rem}
+.err{color:var(--bad);font-size:.75rem;margin-top:.5rem}
+.btn{background:var(--card2);border:1px solid var(--acc);color:var(--acc);
+  padding:.35rem .8rem;border-radius:4px;font-family:inherit;font-size:.75rem;
+  cursor:pointer;margin-right:.4rem;display:inline-block}
+.btn:hover{background:var(--acc);color:var(--bg)}
+.input-text{background:var(--bg);border:1px solid var(--mut);color:var(--ink);
+  padding:.4rem .6rem;border-radius:4px;font-family:inherit;font-size:.75rem}
+.foot{margin-top:2rem;padding:1rem 0 .4rem;border-top:1px solid var(--mut);
+  color:var(--dim);font-size:.68rem;text-align:center;letter-spacing:.03em}
+</style>
+<link rel="stylesheet" href="/assets/ui-kit.css">
+<script src="/assets/ui-kit.js" nonce="__CSP_NONCE__"></script>
+</head>
+<body>
+<header>
+  <div class="mark">Q@</div>
+  <h1>Qom Mail</h1>
+  <a class="back" href="/">← Consola</a>
+  <span class="hint" style="margin-left:.6rem">Appliance → Operadores</span>
+</header>
+<div class="wrap">
+  <p class="hint" style="margin:0 0 .8rem">Correo interno del appliance (cola sellada). Desde acá salen notificaciones y códigos OTP de login — el remitente es el correo del admin <b>qomdefender</b>. Menú: <b>Appliance → Operadores</b>.</p>
+  <div id="uk-strip"></div>
+
+  <div class="tabs" id="tabs"></div>
+  <div id="view"></div>
+
+  <div class="foot">qom Defender OS · transporte SMTP sellado en evidencia · sin dependencia de MTA externo</div>
+</div>
+
+<script nonce="__CSP_NONCE__">
+"use strict";
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function api(path,opts){
+  opts=opts||{};opts.credentials="same-origin";
+  if(opts.body&&typeof opts.body!=="string"){
+    opts.headers={"Content-Type":"application/json"};
+    opts.body=JSON.stringify(opts.body);
+  }
+  return fetch(path,opts).then(function(r){
+    return r.json().catch(function(){return{};}).then(function(j){
+      if(!r.ok){var e=new Error(j.error||j.message||("HTTP "+r.status));e.status=r.status;throw e;}
+      return j;
+    });
+  });
+}
+function fmtTs(x){return x?esc(String(x).replace("T"," ").slice(0,19)):"—";}
+
+var TABS=[
+  ["estado","Estado y Prueba"],
+  ["cola","Cola Persistente"],
+  ["stats","Métricas y Evidencia"]
+];
+var CUR="estado";
+
+function tabsHtml(){
+  document.getElementById("tabs").innerHTML=TABS.map(function(t){
+    return '<button class="tab'+(t[0]===CUR?" on":"")+'" data-t="'+t[0]+'">'+t[1]+'</button>';
+  }).join("");
+  document.querySelectorAll(".tab").forEach(function(b){
+    b.onclick=function(){CUR=b.dataset.t;render();};
+  });
+}
+
+function badgeMailStatus(s){
+  var map={sent:"badge",sending:"blue",pending:"warn",failed:"bad",permanently_failed:"bad"};
+  var cls=map[s]||"dim";
+  return '<span class="badge '+cls+'">'+esc(s)+'</span>';
+}
+
+// ---------- 1. Estado y Prueba ----------
+function vEstado(){
+  return api("/api/v1/mail/status").then(function(st){
+    var enabled=st.enabled===true;
+    var q=st.queue||{};
+    var h='<section class="sec"><h2>Estado del Subsistema de Correo</h2>'+
+      '<div class="hint">Transporte de notificaciones y alertas judiciales. '+
+      'qMail aísla el envío de alertas críticas del MTA del sistema operativo para garantizar integridad auditada.</div>'+
+      '<div class="kv">'+
+        '<div class="k"><div class="lbl">servicio activo</div><div class="val big '+(enabled?"":"bad")+'">'+(enabled?"HABILITADO":"DESHABILITADO")+'</div></div>'+
+        '<div class="k"><div class="lbl">pendientes en cola</div><div class="val">'+esc(q.pending||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">enviados con éxito</div><div class="val">'+esc(q.sent||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">fallos en reintento</div><div class="val '+(q.failed>0?"bad":"")+'">'+esc(q.failed||0)+'</div></div>'+
+      '</div>';
+
+    if(!enabled&&st.error){
+      h+='<div class="err">Configuración no disponible: '+esc(st.error)+'</div>';
+    }
+
+    h+='<div style="margin-top:1.5rem;border-top:1px solid var(--mut);padding-top:1rem">'+
+      '<h3 style="margin-top:0">Enviar Correo de Prueba</h3>'+
+      '<div class="hint">Encola un mensaje con el template <code>test</code> para verificar conectividad SMTP y sellado en cadena.</div>'+
+      '<div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">'+
+        '<input type="email" id="test-email" class="input-text" placeholder="operador@seguridad.ar" style="width:280px">'+
+        '<button class="btn" id="btn-send-test">Enviar Prueba</button>'+
+      '</div>'+
+      '<div id="test-res" style="margin-top:.6rem"></div>'+
+    '</div></section>';
+    return h;
+  });
+}
+
+// ---------- 2. Cola Persistente ----------
+function vCola(){
+  return api("/api/v1/mail/queue").then(function(res){
+    var entries=res.entries||[];
+    var h='<section class="sec"><h2>Cola Persistente de Envíos</h2>'+
+      '<div class="hint">Mensajes respaldados en disco con reintentos exponenciales y backoff inteligente. '+
+      'Si un servidor SMTP no responde, el mensaje no se pierde y queda registrado.</div>'+
+      '<table><thead><tr><th>ID</th><th>Destinatario</th><th>Prioridad</th><th>Estado</th><th>Intentos</th><th>Creado</th><th>Acción</th></tr></thead><tbody>';
+
+    if(!entries.length){
+      h+='<tr><td colspan="7" class="hint" style="text-align:center;padding:1.5rem">La cola de correo está vacía</td></tr>';
+    }
+    entries.forEach(function(e){
+      var to=(e.to||[]).join(", ")||"—";
+      h+='<tr>'+
+        '<td><code>'+esc(e.id)+'</code></td>'+
+        '<td>'+esc(to)+'</td>'+
+        '<td><span class="badge dim">'+esc(e.priority||"normal")+'</span></td>'+
+        '<td>'+badgeMailStatus(e.status)+'</td>'+
+        '<td>'+esc(e.attempts||0)+'</td>'+
+        '<td>'+fmtTs(e.created_at)+'</td>'+
+        '<td>'+(e.status!=="sent"?'<button class="btn" style="padding:.15rem .45rem;font-size:.68rem" data-retry="'+esc(e.id)+'">Reintentar</button>':"—")+'</td>'+
+      '</tr>';
+    });
+    h+='</tbody></table></section>';
+    return h;
+  });
+}
+
+// ---------- 3. Métricas y Evidencia ----------
+function vStats(){
+  return api("/api/v1/mail/stats").then(function(st){
+    var h='<section class="sec"><h2>Métricas de Entrega y Evidencia Judicial</h2>'+
+      '<div class="hint">Monitoreo de cadencia y sellado criptográfico en la caja negra. '+
+      'Todo correo encolado, entregado o fallido genera un evento con hash SHA-256 en la cadena de evidencia.</div>'+
+      '<div class="kv">'+
+        '<div class="k"><div class="lbl">total encolados</div><div class="val">'+esc(st.enqueued_total||st.total||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">entregados exitosos</div><div class="val big">'+esc(st.sent_total||st.sent||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">fallos permanentes</div><div class="val '+(st.permanently_failed>0?"bad":"")+'">'+esc(st.permanently_failed||0)+'</div></div>'+
+        '<div class="k"><div class="lbl">último envío</div><div class="val" style="font-size:.8rem">'+fmtTs(st.last_sent_at)+'</div></div>'+
+      '</div>'+
+      '<div style="margin-top:1.2rem;background:var(--card2);padding:1rem;border-radius:6px;border:1px solid var(--mut)">'+
+        '<b>Eventos de Evidencia Registrados:</b>'+
+        '<ul style="color:var(--dim);font-size:.75rem;margin:.5rem 0 0 1.2rem;line-height:1.6">'+
+          '<li><code>mail_enqueued</code>: Sella destinatario, asunto y prioridad al ingresar a la cola.</li>'+
+          '<li><code>mail_sent</code>: Sella la respuesta del servidor SMTP y el tiempo de entrega.</li>'+
+          '<li><code>mail_failed</code>: Sella el código de error y el intento para control de auditoría.</li>'+
+        '</ul>'+
+      '</div></section>';
+    return h;
+  });
+}
+
+function attachEvents(){
+  var bTest=document.getElementById("btn-send-test");
+  if(bTest){
+    bTest.onclick=function(){
+      var email=(document.getElementById("test-email").value||"").trim();
+      var out=document.getElementById("test-res");
+      if(!email){
+        out.innerHTML='<span class="err">Ingrese una dirección de correo válida</span>';
+        return;
+      }
+      out.innerHTML='<span class="hint">Enviando mensaje de prueba...</span>';
+      api("/api/v1/mail/test",{
+        method:"POST",
+        body:{to:email}
+      }).then(function(res){
+        out.innerHTML='<span style="color:var(--acc)">✓ Correo encolado con éxito: '+esc(res.id||"id generado")+'</span>';
+        setTimeout(render, 1500);
+      }).catch(function(e){
+        out.innerHTML='<span class="err">Error: '+esc(e.message)+'</span>';
+      });
+    };
+  }
+
+  document.querySelectorAll("button[data-retry]").forEach(function(b){
+    b.onclick=function(){
+      var id=b.dataset.retry;
+      b.disabled=true;
+      api("/api/v1/mail/queue/"+encodeURIComponent(id)+"/retry",{method:"POST"}).then(function(){
+        render();
+      }).catch(function(e){alert("Fallo al reintentar: "+e.message);b.disabled=false;});
+    };
+  });
+}
+
+function render(){
+  tabsHtml();
+  var v=document.getElementById("view");
+  v.innerHTML='<div class="hint">Cargando datos...</div>';
+  var p=CUR==="estado"?vEstado():
+        CUR==="cola"?vCola():
+        vStats();
+  p.then(function(h){
+    v.innerHTML=h;
+    attachEvents();
+  }).catch(function(e){
+    v.innerHTML='<section class="sec"><h2>Error</h2><div class="err">'+esc(e.message)+'</div></section>';
+  });
+}
+
+render();
+</script>
+</body>
+</html>

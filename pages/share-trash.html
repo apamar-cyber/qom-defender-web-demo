@@ -1,0 +1,300 @@
+<!doctype html>
+<!-- qom Share — papelera de reciclaje.
+
+     Vista de la cuarentena con retención: lista archivos borrados
+     (.trash/YYYY-MM-DD/<user>/<path>), permite restaurar (hash
+     verificado) o purgar manualmente con motivo. Cada operación
+     se sella en la cadena de evidencia.
+
+     Honestidad: todo lo que se ve viene de /api/v1/share/* —
+     si el share está deshabilitado o vacío, la vista lo dice.
+     La purga manual exige motivo — igual que la API. -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom Share — Papelera</title>
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/assets/ui-kit.css">
+<style>
+:root{
+  --bg:#0b1420; --card:#152233; --card2:#1a2d42; --ink:#d7e3ef;
+  --dim:#7f95ab; --mut:#243447; --acc:#4a7cb0; --warn:#c4a35a; --bad:#c07a7a;
+  --ok:#6aa88a; --bright:#eef4fa;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;font-size:13px}
+.wrap{max-width:1150px;margin:0 auto;padding:1.2rem}
+.top{display:flex;justify-content:space-between;align-items:baseline;
+  flex-wrap:wrap;gap:.8rem;margin-bottom:1rem}
+.brand{font-size:1.35rem;font-weight:700}
+.brand em{color:var(--acc);font-style:normal}
+.back{color:var(--acc);text-decoration:none;font-size:.8rem}
+.hint{color:var(--dim);font-size:.72rem;margin-bottom:.8rem;line-height:1.5}
+.stats{display:flex;gap:1.6rem;flex-wrap:wrap;margin:.4rem 0 1rem}
+.stat{display:flex;flex-direction:column}
+.stat b{font-size:1.35rem;color:var(--acc)}
+.stat span{font-size:.65rem;color:var(--dim);text-transform:uppercase}
+.filters{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;
+  background:var(--card);border:1px solid var(--mut);border-radius:8px;
+  padding:.7rem .9rem;margin-bottom:1rem}
+.filters input,.filters select{background:var(--card2);border:1px solid var(--mut);
+  color:var(--ink);padding:.35rem .6rem;border-radius:5px;font-family:inherit;font-size:.75rem}
+.filters label{font-size:.72rem;color:var(--dim);display:flex;gap:.3rem;align-items:center}
+button{background:var(--card2);border:1px solid var(--mut);color:var(--acc);
+  padding:.35rem .8rem;border-radius:5px;cursor:pointer;font-family:inherit;font-size:.72rem}
+button:hover{border-color:var(--acc)}
+button.danger{color:var(--bad)} button.danger:hover{border-color:var(--bad)}
+button.primary{color:var(--ok)} button.primary:hover{border-color:var(--ok)}
+.item{background:var(--card);border:1px solid var(--mut);border-radius:8px;
+  padding:.8rem 1rem;margin-bottom:.6rem}
+.item .head{display:flex;justify-content:space-between;gap:.8rem;
+  font-size:.7rem;color:var(--dim);margin-bottom:.35rem}
+.item .path{font-size:.82rem;word-break:break-all;margin:.3rem 0}
+.item .meta{display:flex;gap:1rem;flex-wrap:wrap;font-size:.68rem;
+  color:var(--dim);margin-bottom:.5rem}
+.item .actions{display:flex;gap:.5rem}
+.badge{display:inline-block;background:var(--card2);border:1px solid var(--mut);
+  padding:.1rem .5rem;border-radius:10px;font-size:.62rem;white-space:nowrap}
+.badge.quarantined{border-color:var(--warn);color:var(--warn)}
+.badge.restored{border-color:var(--ok);color:var(--ok)}
+.badge.purged,.badge.purged_manually{border-color:var(--bad);color:var(--bad)}
+.empty{color:var(--dim);text-align:center;padding:2rem;font-size:.8rem}
+.pages{display:flex;gap:.5rem;align-items:center;justify-content:center;
+  margin-top:1rem;font-size:.72rem;color:var(--dim)}
+.err{color:var(--bad);font-size:.75rem;padding:.6rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand">qom <em>Share</em> — papelera</div>
+    <div>
+      <a class="back" href="/share/ui/" style="margin-right:.8rem">← panel</a>
+      <a class="back" href="/">← consola</a>
+    </div>
+  </div>
+  <p class="hint">Los archivos borrados quedan en cuarentena durante su
+  retención; cada restauración o purga se sella en la cadena de
+  evidencia. Acceso solo por intranet.</p>
+  <div id="onboardBanner" class="item" style="display:none;border-color:var(--warn)">
+    <span style="color:var(--warn)">QOM Share todavía no está configurado.</span>
+    <a class="back" href="/share/onboarding" style="margin-left:.6rem">Configurar QOM Share →</a>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="filters">
+    <input id="f-user" placeholder="usuario">
+    <input id="f-path" placeholder="buscar en path...">
+    <input id="f-since" type="date" title="borrados desde">
+    <label><input id="f-rest" type="checkbox"> solo restaurables</label>
+    <button id="btn-refresh">actualizar</button>
+  </div>
+
+  <div id="err"></div>
+  <div id="list"></div>
+  <div class="pages" id="pages"></div>
+
+  <div class="filters" style="margin-top:1.2rem">
+    <span style="font-size:.72rem;color:var(--dim)">snapshots qSBACKUP
+      (incluyen la cuarentena) — el restore va a staging, no pisa datos vivos</span>
+    <button id="btn-snap">snapshot ahora</button>
+  </div>
+  <div id="backups"></div>
+</div>
+
+<script nonce="__CSP_NONCE__">
+const API = '/api/v1/share';
+let st = { offset: 0, limit: 50, total: 0 };
+
+function fmtBytes(b){
+  if(b < 1024) return b + ' B';
+  if(b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+  if(b < 1024*1024*1024) return (b/1024/1024).toFixed(1) + ' MB';
+  return (b/1024/1024/1024).toFixed(2) + ' GB';
+}
+function fmtDate(s){ try { return new Date(s).toLocaleString('es-AR'); } catch(e){ return s; } }
+function fmtStatus(s){
+  return {quarantined:'en cuarentena', restored:'restaurado',
+          purged:'purgado', purged_manually:'purgado manual'}[s] || s;
+}
+async function getJson(url){
+  const r = await fetch(url, { credentials: 'same-origin' });
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function checkOnboarding(){
+  try {
+    const s = await getJson(API + '/status');
+    if(s.configured === false)
+      document.getElementById('onboardBanner').style.display = 'block';
+  } catch(e) { /* share off: el hint de error ya lo da loadStats */ }
+}
+async function loadStats(){
+  const el = document.getElementById('stats');
+  try {
+    const s = await getJson(API + '/trash/stats');
+    el.innerHTML =
+      `<div class="stat"><b>${s.entries}</b><span>en cuarentena</span></div>` +
+      `<div class="stat"><b>${s.restorable ?? s.entries}</b><span>restaurables</span></div>` +
+      `<div class="stat"><b>${s.expired_pending ?? 0}</b><span>expirados</span></div>` +
+      `<div class="stat"><b>${fmtBytes(s.bytes)}</b><span>espacio</span></div>` +
+      `<div class="stat"><b>${s.retention_days}d</b><span>retención</span></div>` +
+      `<div class="stat"><b>${s.history_entries ?? s.entries}</b><span>historial</span></div>`;
+  } catch(e){
+    el.innerHTML = '<span class="err">share no disponible: ' + e.message + '</span>';
+  }
+}
+async function loadList(){
+  const err = document.getElementById('err');
+  const list = document.getElementById('list');
+  err.innerHTML = '';
+  const p = new URLSearchParams({offset: st.offset, limit: st.limit});
+  const u = document.getElementById('f-user').value.trim();
+  const pp = document.getElementById('f-path').value.trim();
+  const si = document.getElementById('f-since').value;
+  if(u) p.set('user', u);
+  if(pp) p.set('path', pp);
+  if(si) p.set('since', new Date(si).toISOString());
+  if(document.getElementById('f-rest').checked) p.set('restorable', '1');
+  try {
+    const d = await getJson(API + '/trash?' + p);
+    st.total = d.total;
+    if(!d.entries.length){
+      list.innerHTML = '<div class="empty">La papelera está vacía (o sin coincidencias para el filtro).</div>';
+      renderPages();
+      return;
+    }
+    list.innerHTML = d.entries.map(e => `
+      <div class="item">
+        <div class="head">
+          <span>${fmtDate(e.deleted_at)}</span>
+          <span>${e.deleted_by} — ${e.deleted_from_ip} (${e.protocol})</span>
+          <span class="badge ${e.status}">${fmtStatus(e.status)}</span>
+        </div>
+        <div class="path">${e.original_path}</div>
+        <div class="meta">
+          <span>${fmtBytes(e.size)}</span>
+          <span>expira ${fmtDate(e.retention_until)}</span>
+          <span>id ${e.id}</span>
+        </div>
+        <div class="actions">
+          ${e.status === 'quarantined' ? `
+            <button class="primary" type="button" data-act="restore" data-id="${e.id}">restaurar</button>
+            <button class="danger" type="button" data-act="purge" data-id="${e.id}">purgar</button>` : ''}
+        </div>
+      </div>`).join('');
+    renderPages();
+  } catch(e){
+    err.innerHTML = '<div class="err">error: ' + e.message + '</div>';
+  }
+}
+function renderPages(){
+  const el = document.getElementById('pages');
+  const pages = Math.max(1, Math.ceil(st.total / st.limit));
+  const cur = Math.floor(st.offset / st.limit) + 1;
+  el.innerHTML = `<button type="button" data-act="page" data-d="-1" ${cur<=1?'disabled':''}>‹</button>
+    <span>página ${cur} de ${pages} — ${st.total} entradas</span>
+    <button type="button" data-act="page" data-d="1" ${cur>=pages?'disabled':''}>›</button>`;
+}
+/* CSP_DELEGATE */
+document.addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-act]');
+  if (!b) return;
+  const act = b.getAttribute('data-act');
+  const id = b.getAttribute('data-id');
+  if (act === 'restore') doRestore(id);
+  else if (act === 'purge') doPurge(id);
+  else if (act === 'page') page(+b.getAttribute('data-d'));
+  else if (act === 'snapRestore') doSnapRestore(id);
+});
+function page(d){
+  st.offset = Math.max(0, st.offset + d * st.limit);
+  loadList();
+}
+async function doRestore(id){
+  if(!confirm('¿Restaurar al path original? (si está ocupado va a .restored.N)')) return;
+  const r = await fetch(`${API}/trash/${id}/restore`, {method:'POST', credentials:'same-origin'});
+  const d = await r.json();
+  if(!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+  alert('Restaurado en: ' + d.restored.restored_path);
+  loadStats(); loadList();
+}
+async function doPurge(id){
+  const reason = prompt('Motivo de la purga (obligatorio, queda sellado):');
+  if(!reason) return;
+  const r = await fetch(`${API}/trash/${id}/purge`, {
+    method:'POST', credentials:'same-origin',
+    headers:{'content-type':'application/json'},
+    body: JSON.stringify({reason})
+  });
+  const d = await r.json();
+  if(!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+  alert('Purgado permanentemente.');
+  loadStats(); loadList();
+}
+async function loadBackups(){
+  const el = document.getElementById('backups');
+  try {
+    const d = await getJson(API + '/backups');
+    if(!d.snapshots.length){
+      el.innerHTML = '<div class="empty">Sin snapshots todavía — el scheduler corre cada hora o usá «snapshot ahora».</div>';
+      return;
+    }
+    el.innerHTML = d.snapshots.map(s => `
+      <div class="item">
+        <div class="head">
+          <span>${fmtDate(s.completed_at || s.started_at)}</span>
+          <span>${s.id}</span>
+          <span class="badge">${(s.status||'').toLowerCase()}</span>
+        </div>
+        <div class="meta">
+          <span>${s.file_count ?? '—'} archivos</span>
+          <span>${fmtBytes(s.size_bytes || 0)}</span>
+          <span>merkle ${(s.merkle_root||'').slice(0,16)}…</span>
+        </div>
+        <div class="actions">
+          <button class="primary" type="button" data-act="snapRestore" data-id="${s.id}">restaurar a staging</button>
+        </div>
+      </div>`).join('');
+  } catch(e){
+    el.innerHTML = '<span class="err">backups no disponibles: ' + e.message + '</span>';
+  }
+}
+async function doSnapNow(){
+  const r = await fetch(`${API}/backups/run`, {method:'POST', credentials:'same-origin'});
+  const d = await r.json();
+  if(!r.ok || !d.ok){ alert('Snapshot falló: ' + (d.error || JSON.stringify(d.record||{}).slice(0,200))); return; }
+  alert('Snapshot ' + d.record.id + ' — ' + (d.record.file_count||0) + ' archivos sellados');
+  loadBackups();
+}
+async function doSnapRestore(id){
+  const reason = prompt(
+    'Restaurar ' + id + ' a staging (no pisa el share vivo).\n' +
+    'Motivo de la restauración (obligatorio, queda sellado):');
+  if(!reason) return;
+  const r = await fetch(`${API}/backups/restore`, {
+    method:'POST', credentials:'same-origin',
+    headers:{'content-type':'application/json'},
+    body: JSON.stringify({backup_id:id, reason})
+  });
+  const d = await r.json();
+  if(!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+  alert('Restaurado en staging:\n' + d.restored_to + '\n\n' + d.note);
+}
+document.getElementById('btn-snap').addEventListener('click', doSnapNow);
+document.getElementById('btn-refresh').addEventListener('click', () => { st.offset = 0; loadStats(); loadList(); });
+document.getElementById('f-rest').addEventListener('change', () => { st.offset = 0; loadList(); });
+checkOnboarding();
+loadStats();
+loadList();
+loadBackups();
+setInterval(loadStats, 30000);
+</script>
+</body>
+</html>

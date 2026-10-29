@@ -1,0 +1,480 @@
+<!doctype html>
+<!-- Qom Statistics — clasificación auditable de eventos + informes.
+     Tema propio: pizarra-azul oscuro (análisis/reportes). -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom Statistics</title>
+  <script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --bg:#0b1420; --card:#152233; --card2:#1a2d42; --ink:#d7e3ef;
+  --dim:#7f95ab; --mut:#243447; --acc:#4a7cb0; --ok:#6aa88a;
+  --warn:#c4a35a; --bad:#c07a7a; --uncat:#9eb6cf;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;font-size:13px}
+.wrap{max-width:1200px;margin:0 auto;padding:1.2rem}
+.top{display:flex;justify-content:space-between;align-items:center;
+  flex-wrap:wrap;gap:.8rem;margin-bottom:1.2rem}
+.brand{font-size:1.12rem;font-weight:650;letter-spacing:.02em}
+.brand em{color:var(--acc);font-style:normal}
+
+.ranges{display:flex;gap:.4rem}
+.ranges button{background:var(--card2);color:var(--dim);border:1px solid var(--mut);
+  padding:.35rem .9rem;cursor:pointer;font-family:inherit;font-size:.78rem}
+.ranges button.on{background:transparent;color:var(--ink);border-color:var(--acc);font-weight:650}
+section{background:var(--card);border:1px solid var(--mut);border-radius:var(--radius-lg,6px);
+  padding:1rem 1.2rem;margin-bottom:1.2rem}
+h2{margin:.2rem 0 .8rem;font-size:.85rem;color:var(--acc);
+  text-transform:uppercase;letter-spacing:.15em}
+.den{color:var(--dim);font-size:.78rem;margin-bottom:1rem}
+.den b{color:var(--ink)}
+.cat{margin-bottom:.85rem}
+.cat .row{display:flex;align-items:baseline;gap:.7rem}
+.cat .name{font-weight:700;min-width:170px}
+.cat .bar{flex:1;height:9px;background:var(--card2);border-radius:4px;overflow:hidden}
+.cat .bar i{display:block;height:100%;background:var(--acc)}
+.cat .num{min-width:110px;text-align:right;color:var(--ink)}
+.cat .desc{color:var(--dim);font-size:.72rem;margin:.15rem 0 0 0}
+.cat .doc{color:var(--mut);font-size:.7rem;margin-top:.2rem;display:none;
+  border-left:2px solid var(--mut);padding-left:.6rem;line-height:1.5}
+.cat.open .doc{display:block}
+/* categoría con muestra chica (<MIN_SAMPLE): real pero no concluyente */
+.cat.thin .name,.cat.thin .num{color:var(--dim)}
+.cat.thin .bar i{opacity:.45}
+.thinTag{color:var(--warn);font-size:.62rem;border:1px solid var(--warn);
+  border-radius:8px;padding:0 .4rem;margin-left:.4rem}
+.cat .tgl{color:var(--acc);cursor:pointer;font-size:.68rem;margin-left:.5rem}
+.cat.uncat .bar i{background:var(--uncat)}
+.cat.uncat .name{color:var(--uncat)}
+.cat.pentest .bar i{background:#a78bfa}
+.cat.pentest .name{color:#a78bfa}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:.8rem}
+.sm{background:var(--card2);border:1px solid var(--mut);border-radius:6px;padding:.6rem}
+.sm .sn{color:var(--dim);font-size:.72rem}
+.sm .sv{font-size:1.1rem;font-weight:700}
+.sm svg{width:100%;height:34px;display:block;margin-top:.3rem}
+.ev svg{width:100%;height:110px}
+.legend{display:flex;gap:1rem;flex-wrap:wrap;font-size:.7rem;color:var(--dim);margin-top:.4rem}
+.legend b{font-weight:400}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:.3rem}
+.rep{display:flex;justify-content:space-between;gap:.6rem;padding:.4rem 0;
+  border-bottom:1px solid var(--mut);font-size:.78rem;align-items:center}
+.rep .meta{color:var(--dim);font-size:.68rem}
+.rep a{color:var(--acc);cursor:pointer;text-decoration:none}
+form.inline{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.6rem}
+input,select{background:var(--card2);border:1px solid var(--mut);color:var(--ink);
+  padding:.35rem .5rem;font-family:inherit;font-size:.78rem;border-radius:4px}
+button.act{background:var(--acc);color:#f4f8fc;border:0;padding:.35rem .9rem;
+  cursor:pointer;font-family:inherit;font-weight:600;font-size:.78rem;border-radius:4px}
+.empty{color:var(--warn);padding:1rem;border:1px dashed var(--warn);border-radius:6px;
+  font-size:.8rem;text-align:center}
+.note{color:var(--dim);font-size:.72rem;margin-top:.6rem}
+#uncatList{font-size:.72rem;color:var(--dim);margin-top:.4rem}
+#uncatList div{padding:.1rem 0}
+details summary{cursor:pointer;color:var(--acc);font-size:.75rem}
+pre.map{background:var(--card2);padding:.7rem;border-radius:6px;overflow:auto;
+  max-height:280px;font-size:.68rem;color:var(--dim)}
+.foot{margin-top:2rem;padding:1rem 0 .4rem;border-top:1px solid var(--mut);
+  color:var(--dim);font-size:.68rem;text-align:center;letter-spacing:.03em}
+.tdef{color:var(--dim);font-size:.65rem;line-height:1.45;margin-top:.35rem;
+  border-left:2px solid var(--mut);padding-left:.5rem}
+.tnum{font-size:1.05rem;font-weight:700}
+.tunit{font-size:.68rem;color:var(--dim)}
+.aihead{display:flex;justify-content:space-between;font-size:.72rem;color:var(--dim);
+  padding:.15rem 0;border-bottom:1px dashed var(--mut)}
+</style>
+  <link rel="stylesheet" href="/assets/ui-kit.css">
+  <script src="/assets/ui-kit.js" nonce="__CSP_NONCE__"></script>
+</head>
+<body>
+<header>
+  <div class="mark">QΣ</div>
+  <h1>Qom Statistics</h1>
+  <div class="right ranges">
+    <button data-d="7">7d</button>
+    <button data-d="15">15d</button>
+    <button data-d="30" class="on">30d</button>
+  </div>
+</header>
+<div class="wrap">
+
+  <p class="den" style="margin-bottom:.8rem;line-height:1.45">Consola de <b>Auditoría-Forense</b>: distribución real de eventos sobre el denominador de la ventana, telemetría del pipeline, FIM, informes firmados Ed25519 y cobertura ISO/MITRE/CSPM.
+    Sin datos inventados — si una fuente no responde se muestra «sin datos». Abrí también las pestañas nativas del menú Auditoría (Evidencia, Cumplimiento, Riesgo) para el mismo contenido embebido.</p>
+
+  <div id="uk-strip"></div>
+
+  <div id="insufficient"></div>
+
+  <section>
+    <h2>Distribución de eventos</h2>
+    <div class="den" id="den"></div>
+    <div id="dist"></div>
+    <div class="cat uncat" id="uncatCard">
+      <div class="row">
+        <span class="name">Sin categorizar</span>
+        <span class="bar"><i style="width:0%"></i></span>
+        <span class="num"></span>
+      </div>
+      <div class="desc">Claves observadas sin regla de mapeo — el feedback para cerrar el gap (no se esconde)</div>
+      <div id="uncatList"></div>
+    </div>
+    <div class="cat pentest">
+      <div class="row">
+        <span class="name">Ejercicios pentest</span>
+        <span class="bar"><i style="width:0%"></i></span>
+        <span class="num"></span>
+      </div>
+      <div class="desc">Telemetría de ejercicios autorizados — bucket aparte, nunca cuenta como ataque</div>
+    </div>
+    <div class="note">Los porcentajes son sobre <b>eventos clasificados</b> del
+      denominador — el mapping decide qué señal cuenta en qué categoría
+      (<a href="#" id="mapLink" style="color:var(--acc)">ver mapping <span id="mapV"></span></a>).
+      Cada categoría con muestra chica se marca atenuada; "Sin categorizar"
+      lista las claves sin mapear. El mapping es por-tenant: un override
+      propio (<code>POST /statistics/mapping/save {tenant:…}</code>) gana
+      sobre el global.</div>
+    <div id="mappingBox" style="display:none"><pre class="map" id="mappingPre"></pre></div>
+  </section>
+
+  <section>
+    <h2>Evolución temporal</h2>
+    <div class="ev" id="evo"></div>
+    <div class="legend" id="evoLegend"></div>
+  </section>
+
+  <section>
+    <h2>Telemetría operativa</h2>
+    <div class="den" >Latencias reales del pipeline — cada métrica declara qué
+      tramo mide; sin muestras se dice "sin datos", nunca cero.</div>
+    <div class="grid" id="telemetry"></div>
+    <div class="grid" id="opsCards" style="margin-top:.8rem"></div>
+  </section>
+
+  <section>
+    <h2>Cobertura del pipeline</h2>
+    <div class="den">¿Mi telemetría es confiable ahora mismo? Semáforo por
+      fuente (umbral derivado de su cadencia, no fijo) + canarios del
+      pipeline (probes sintéticos — <b>skipped ≠ fallo</b>: warmup o no configurado).
+      <b>null</b> = sin inventario declarado, no hay "esperado" que medir.</div>
+    <div id="covBadge" class="den" style="font-size:1rem;margin-bottom:.6rem"></div>
+    <div class="grid" id="covSources"></div>
+    <div class="den" style="margin-top:.8rem">Canarios — probes que prueban
+      el pipeline activamente.</div>
+    <div class="grid" id="canaryList"></div>
+    <div class="den" style="margin-top:.8rem">Integridad de archivos —
+      divergencias contra el baseline aprobado (FIM).</div>
+    <div class="grid" id="fimList"></div>
+  </section>
+
+  <section>
+    <h2>Eventos por fuente</h2>
+    <div class="den">Cada fuente con su propia escala — una VPN ruidosa no aplasta al firewall.</div>
+    <div class="grid" id="sources"></div>
+  </section>
+
+  <section>
+    <h2>Informes</h2>
+    <form class="inline" id="repForm">
+      <input id="repName" placeholder="nombre del informe" size="30">
+      <select id="repDays">
+        <option value="7">semanal (7d)</option>
+        <option value="15">quincenal (15d)</option>
+        <option value="30" selected>mensual (30d)</option>
+      </select>
+      <button class="act" type="submit">Generar y archivar</button>
+    </form>
+    <div id="reports"></div>
+    <div class="note">Cada informe se persiste con sha256 + firma Ed25519
+      (si el appliance tiene <code>evidence.ed25519</code>) + sello en la
+      cadena. La firma es verificable <b>offline</b>: pubkey y receta en
+      <code>GET /api/v1/statistics/verify-key</code> — un auditor externo
+      no necesita acceso al appliance. ✍️ = firmado.
+      <b>↓ pdf</b> descarga el informe como PDF (misma fuente que el
+      documento firmado).</div>
+  </section>
+
+  <footer class="foot">Diseñado y programado por @apamar - Sistema operativo de Ciberdefensa *QOM Defender * v.0.1.0 setiembre 2026</footer>
+</div>
+
+<script nonce="__CSP_NONCE__">
+const CAT_COLORS = ["#5a8fc0","#6aa88a","#c4a35a","#c07a7a","#a78bfa","#f472b6","#6aa88a","#fb923c"];
+let DAYS = 30, DATA = null, MAPPING = null;
+
+async function api(p, m, b){
+  const r = await fetch(p, {method: m||"GET", credentials: "same-origin",
+    headers: b?{"content-type":"application/json"}:{},
+    body: b?JSON.stringify(b):undefined});
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+function spark(points, color, h){
+  const w=200, hh=h||34, max=Math.max(1,...points);
+  if(!points.length) return `<svg viewBox="0 0 ${w} ${hh}"></svg>`;
+  const step=w/Math.max(1,points.length-1);
+  const d=points.map((p,i)=>`${i?"L":"M"}${(i*step).toFixed(1)},${(hh-2-p/max*(hh-6)).toFixed(1)}`).join(" ");
+  return `<svg viewBox="0 0 ${w} ${hh}" preserveAspectRatio="none"><path d="${d}" fill="none" stroke="${color}" stroke-width="1.5"/></svg>`;
+}
+
+function render(){
+  // Categorías con eventos primero — las en cero no tapa el dato real.
+  const d = DATA, cats = [...(d.distribution||[])].sort((a,b)=>(b.count||0)-(a.count||0));
+  const den = d.denominator;
+  document.getElementById("den").innerHTML =
+    `${den.window}: <b>${den.events_total.toLocaleString()}</b> eventos · ` +
+    `<b>${den.events_classified.toLocaleString()}</b> clasificados · ` +
+    `<b>${den.pentest_events.toLocaleString()}</b> pentest` +
+    (d.earliest_day ? ` · datos desde <b>${d.earliest_day}</b>` : ` · <b>sin eventos</b>`) +
+    ` · motor: <b>${d.backend||"archive"}</b>` +
+    (d.backend==="clickhouse" ? ` <span title="${esc(d.provenance||"")}">ⓘ</span>` : "");
+
+  const ins = document.getElementById("insufficient");
+  ins.innerHTML = d.insufficient
+    ? `<div class="empty">Datos insuficientes (${den.events_total} eventos en ${d.range_days}d —
+       la clasificación se aplica sobre el crudo al consultar, así que el histórico
+       archivado queda cubierto automáticamente; antes de ${d.earliest_day||"hoy"} no hay
+       eventos para clasificar). Los números abajo son reales pero no concluyentes.</div>` : "";
+
+  const maxN = Math.max(1, ...cats.map(c=>c.count), d.uncategorized.count, den.pentest_events);
+  const dist = document.getElementById("dist");
+  dist.innerHTML = cats.map((c,i)=>`
+    <div class="cat${c.sufficient?"":" thin"}" data-i="${i}">
+      <div class="row">
+        <span class="name" title="${c.mitre.join(" ")||""}">${esc(c.name)}${c.sufficient?"":`<span class="thinTag">muestra <${d.min_sample_per_category||5}</span>`}<span class="tgl" data-i="${i}">[doc]</span></span>
+        <span class="bar"><i style="width:${(c.count/maxN*100).toFixed(1)}%"></i></span>
+        <span class="num">${c.count.toLocaleString()} · ${c.pct}%</span>
+      </div>
+      <div class="desc">${esc(c.description)}</div>
+      <div class="doc">${esc(c.doc||"")} ${c.mitre.length?`<div class="legend" style="margin-top:.3rem">MITRE: ${c.mitre.join(" · ")}</div>`:""}</div>
+    </div>`).join("");
+  dist.querySelectorAll(".tgl").forEach(t=>t.onclick=e=>{
+    e.target.closest(".cat").classList.toggle("open");});
+
+  // Sin categorizar — visible, con detalle de qué falta mapear.
+  const uc = d.uncategorized, ucCard = document.getElementById("uncatCard");
+  ucCard.querySelector("i").style.width = (uc.count/maxN*100).toFixed(1)+"%";
+  ucCard.querySelector(".num").textContent = `${uc.count.toLocaleString()} eventos`;
+  document.getElementById("uncatList").innerHTML = uc.top.map(t=>
+    `<div>· ${esc(t.key)} — ${t.count}</div>`).join("") ||
+    "<div>· todo clasificado</div>";
+
+  const pc = document.querySelector(".cat.pentest");
+  pc.querySelector("i").style.width = (den.pentest_events/maxN*100).toFixed(1)+"%";
+  pc.querySelector(".num").textContent = `${den.pentest_events.toLocaleString()} eventos`;
+
+  // Evolución temporal — una línea por categoría sobre días.
+  const tl = d.timeline, days = tl.map(t=>t.day);
+  const series = cats.map((c,i)=>({name:c.name,color:CAT_COLORS[i%8],
+    pts:tl.map(t=>t[c.id]||0)})).filter(s=>s.pts.some(p=>p>0));
+  const W=900,H=110,maxV=Math.max(1,...series.flatMap(s=>s.pts));
+  let paths = series.map(s=>{
+    const step=W/Math.max(1,days.length-1);
+    const dd=s.pts.map((p,i)=>`${i?"L":"M"}${(i*step).toFixed(1)},${(H-6-p/maxV*(H-16)).toFixed(1)}`).join(" ");
+    return `<path d="${dd}" fill="none" stroke="${s.color}" stroke-width="1.4"/>`;
+  }).join("");
+  document.getElementById("evo").innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${paths}</svg>` +
+    `<div class="note">${days[0]||"—"} → ${days[days.length-1]||"—"}</div>`;
+  document.getElementById("evoLegend").innerHTML = series.map(s=>
+    `<b><span class="dot" style="background:${s.color}"></span>${esc(s.name)}</b>`).join("");
+
+  // Fuentes — small multiples.
+  document.getElementById("sources").innerHTML = d.sources.map(s=>
+    `<div class="sm"><div class="sn">${esc(s.name)}</div>
+     <div class="sv">${s.total.toLocaleString()}</div>
+     ${spark(days.map(day=>s.by_day[day]||0),"var(--acc)")}</div>`).join("")
+    || `<div class="empty">sin fuentes en la ventana</div>`;
+
+  // Tira SaaS de resumen: denominador real de la ventana.
+  const U = window.QomUI;
+  if (U) {
+    const clsPct = den.events_total ? Math.round(100 * den.events_classified / den.events_total) : 0;
+    U.kpis("uk-strip", [
+      { icon: "pulse", label: "Eventos", value: den.events_total.toLocaleString(), foot: `ventana ${d.range_days}d · motor ${d.backend || "archive"}` },
+      { ring: clsPct, label: "Clasificados", value: clsPct + "%", foot: `${den.events_classified.toLocaleString()} con categoría` },
+      { icon: "alert", tint: uc.count ? "var(--warn)" : "var(--ok)", label: "Sin categorizar", value: uc.count.toLocaleString(), foot: uc.count ? "falta mapping" : "todo mapeado" },
+      { icon: "flask", tint: den.pentest_events ? "var(--warn)" : "var(--ok)", label: "Pentest", value: den.pentest_events.toLocaleString(), foot: "eventos del laboratorio" },
+      { icon: "db", label: "Fuentes", value: d.sources.length, foot: "orígenes en la ventana" },
+    ]);
+  }
+}
+
+function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+async function loadStats(){
+  DATA = await api(`/api/v1/statistics?days=${DAYS}`);
+  render();
+}
+function fmtMs(ms){
+  if(ms>=60000) return (ms/60000).toFixed(1)+" min";
+  if(ms>=1000) return (ms/1000).toFixed(1)+" s";
+  return ms+" ms";
+}
+
+async function loadTelemetry(){
+  const t = await api(`/api/v1/statistics/telemetry?days=${DAYS}`);
+  // Tarjetas por métrica: sparkline de avg_ms por día + definición.
+  document.getElementById("telemetry").innerHTML = (t.telemetry.metrics||[]).map(m=>{
+    const pts = (m.points||[]).map(p=>p.avg_ms);
+    const last = pts.length?pts[pts.length-1]:null;
+    return `<div class="sm">
+      <div class="sn">${esc(m.name)}</div>
+      ${m.samples>0
+        ? `<div class="tnum">${fmtMs(last)} <span class="tunit">avg último día</span></div>
+           ${spark(pts,"var(--acc)")}
+           <div class="tdef">${m.samples} muestras en ${t.telemetry.days}d${m.sufficient?"":" · muestra chica"}<br>${esc(m.definition)}</div>`
+        : `<div class="tnum" style="color:var(--dim)">sin muestras</div>
+           <div class="tdef">Nadie atravesó este tramo en la ventana — no es cero, es "no medido".<br>${esc(m.definition)}</div>`}
+    </div>`;}).join("");
+  // Tarjetas operativas: backlog HITL + motor IA.
+  const b = t.backlog||{}, ai = t.ai&&t.ai.status||{};
+  const lessons = (t.ai&&t.ai.lessons||[]).length;
+  const evalErrs = ai.eval_errors ? Object.keys(ai.eval_errors).length : 0;
+  const aiHtml = ai.unavailable
+    ? `<div class="sm"><div class="sn">Motor IA (qom Analyze)</div>
+       <div class="tnum" style="color:var(--dim)">no disponible</div>
+       <div class="tdef">El motor de diagnóstico no respondió — la introspección es de solo lectura, nunca dispara evaluación.</div></div>`
+    : `<div class="sm"><div class="sn">Motor IA (qom Analyze)</div>
+       <div class="tnum">${esc(ai.global_state||"-")}</div>
+       <div class="aihead"><span>diagnósticos activos</span><b>${ai.diagnoses_active??0}</b></div>
+       <div class="aihead"><span>críticos / warnings</span><b>${ai.critical??0} / ${ai.warnings??0}</b></div>
+       <div class="aihead"><span>causa desconocida (honesto)</span><b>${ai.unknown_cause??0}</b></div>
+       <div class="aihead"><span>reglas cargadas</span><b>${ai.rules_loaded??0}</b></div>
+       <div class="aihead"><span>lecciones documentadas</span><b>${ai.lessons??lessons}</b></div>
+       <div class="aihead"><span>series de métricas</span><b>${ai.metric_series??0}</b></div>
+       <div class="aihead"><span>errores de eval</span><b>${evalErrs}</b></div>
+       <div class="aihead"><span>cambios vs baseline</span><b>${ai.baseline_changes??0}</b></div></div>`;
+  document.getElementById("opsCards").innerHTML =
+    `<div class="sm"><div class="sn">Backlog HITL — esperando operador</div>
+     <div class="tnum">${b.waiting??0} <span class="tunit">tickets</span></div>
+     <div class="aihead"><span>espera promedio</span><b>${fmtMs((b.avg_wait_minutes||0)*60000)}</b></div>
+     <div class="aihead"><span>espera más vieja</span><b>${fmtMs((b.oldest_wait_minutes||0)*60000)}</b></div>
+     <div class="tdef">${esc(b.definition||"")}</div></div>` + aiHtml;
+}
+
+async function loadReports(){
+  const r = await api("/api/v1/statistics/reports");
+  document.getElementById("reports").innerHTML = r.reports.map(x=>
+    `<div class="rep"><span>${esc(x.name)}${x.signed?" ✍":""}</span>
+     <span class="meta">${x.range_days}d · ${x.created_at.slice(0,19).replace("T"," ")} · ${x.sha256.slice(0,12)}…
+     <a data-id="${x.report_id}">ver</a>
+     <a href="/api/v1/statistics/reports/${x.report_id}/pdf" target="_blank">↓ pdf</a></span></div>`).join("")
+    || `<div class="note">sin informes aún — generá el primero arriba</div>`;
+  document.querySelectorAll("#reports a[data-id]").forEach(a=>a.onclick=async()=>{
+    const full = await api(`/api/v1/statistics/reports/${a.dataset.id}`);
+    alert(`${full.name}\nsha256: ${full.sha256}\n` +
+      (full.signature_ed25519
+        ? `firma Ed25519: ${full.signature_ed25519.slice(0,24)}…\npubkey: ${full.pubkey_ed25519.slice(0,24)}…\n(verificable offline — GET /api/v1/statistics/verify-key)\n\n`
+        : `sin firma Ed25519 (appliance sin evidence.ed25519 configurada)\n\n`) +
+      "Distribución de eventos:\n" +
+      full.doc.distribution.map(c=>`  · ${c.name}: ${c.count} (${c.pct}%)`).join("\n"));
+  });
+}
+async function loadMapping(){
+  const r = await api("/api/v1/statistics/mapping");
+  MAPPING = r.mapping;
+  document.getElementById("mapV").textContent =
+    `${r.source==="tenant"?"tenant":"global"} v${r.mapping.version}` +
+    (r.overrides && r.overrides.length ? ` · overrides: ${r.overrides.join(",")}` : "");
+  document.getElementById("mapLink").onclick = e=>{
+    e.preventDefault();
+    const box = document.getElementById("mappingBox");
+    box.style.display = box.style.display==="none"?"block":"none";
+    document.getElementById("mappingPre").textContent =
+      JSON.stringify(MAPPING,null,1);
+  };
+}
+
+function ageStr(s){
+  if(s==null) return "nunca";
+  if(s<60) return s+"s";
+  if(s<3600) return (s/60).toFixed(0)+"min";
+  if(s<86400) return (s/3600).toFixed(1)+"h";
+  return (s/86400).toFixed(1)+"d";
+}
+const COV_COLORS = {ok:"var(--ok)",warn:"var(--warn)",alert:"var(--bad)",
+  never_seen:"var(--bad)",undeclared:"var(--dim)",not_expected:"var(--dim)"};
+const CAN_COLORS = {ok:"var(--ok)",fail:"var(--bad)",timeout:"var(--bad)",
+  skipped:"var(--warn)",pending:"var(--dim)"};
+
+async function loadCoverage(){
+  const c = await api("/api/v1/coverage");
+  const cn = await api("/api/v1/canaries");
+  const srcs = c.sources||[], sum = c.summary||{};
+  const canaries = cn.canaries||[];
+  const worst = srcs.some(s=>s.status==="alert"||s.status==="never_seen")
+    || canaries.some(x=>x.result==="fail") ? "bad"
+    : srcs.some(s=>s.status==="warn") || canaries.some(x=>x.result==="skipped") ? "warn" : "ok";
+  const badge = {ok:["✓ telemetría confiable","var(--ok)"],
+    warn:["⚠ telemetría degradada","var(--warn)"],
+    bad:["✗ telemetría comprometida — fuentes mudas o canarios caídos","var(--bad)"]}[worst];
+  document.getElementById("covBadge").innerHTML =
+    `<b style="color:${badge[1]}">${badge[0]}</b>
+     <span class="meta"> · ${sum.sources_healthy??0}/${sum.sources_expected??0} fuentes esperadas sanas
+     · ${sum.sources_seen??0} vistas · ${c.inventory_declared?"inventario declarado":"SIN inventario — expected=null"}</span>`;
+  document.getElementById("covSources").innerHTML = srcs.map(s=>
+    `<div class="sm"><div class="sn">${esc(s.name)}
+       <b style="color:${COV_COLORS[s.status]||"var(--dim)"};float:right">${s.status}</b></div>
+     <div class="sv">${ageStr(s.last_event_age_secs)}</div>
+     <div class="tdef">${s.events_24h} ev/24h
+       ${s.parse_errors_24h?` · ${s.parse_errors_24h} err`:""}
+       ${s.expected===null?" · sin declarar":""}
+       ${s.status==="never_seen"?" · declarada, jamás emitió":""}
+       <br>warn&gt;${ageStr(s.warn_after_secs)} alert&gt;${ageStr(s.alert_after_secs)}</div>
+    </div>`).join("") || `<div class="note">sin datos — el rollup corre cada 60s</div>`;
+  document.getElementById("canaryList").innerHTML = canaries.map(x=>
+    `<div class="sm"><div class="sn">${esc(x.type)} · ${esc(x.target)}
+       <b style="color:${CAN_COLORS[x.result]||"var(--dim)"};float:right">${x.result}</b></div>
+     <div class="sv">${x.latency_ms} ms</div>
+     <div class="tdef">${x.consecutive_fails?`${x.consecutive_fails} fallos seguidos · `:""}
+       cada ${ageStr(x.interval_secs)}${x.pending_probe?" · probe esperando eval":""}
+       ${x.detail?`<br>${esc(String(x.detail).slice(0,90))}`:""}</div>
+    </div>`).join("");
+  const f = await api("/api/v1/fim");
+  const FIM_COLORS = {extra:"var(--warn)",modified:"var(--warn)",deleted:"var(--bad)"};
+  const CLS_COLORS = {webshell:"var(--bad)",suspicious:"var(--warn)",clean:"var(--ok)"};
+  const anoms = f.anomalies||[], fimSum = f.summary||{};
+  document.getElementById("fimList").innerHTML =
+    (f.watches||[]).length===0
+      ? `<div class="note">sin watches declarados — POST /api/v1/fim/watch
+          o QOM_FIM_WATCH para empezar (el primer scan crea el baseline sellado)</div>`
+      : `<div class="sm"><div class="sn">baseline</div>
+         <div class="sv">${fimSum.files_baselined??0} <span class="tunit">archivos</span></div>
+         <div class="tdef">${(f.watches||[]).length} watches · ${fimSum.anomalies_open??0} anomalías
+           abiertas · ${fimSum.events_total??0} eventos totales</div></div>` +
+        anoms.map(a=>
+        `<div class="sm"><div class="sn">${esc(a.path)}
+           <b style="color:${FIM_COLORS[a.state]||"var(--dim)"};float:right">${a.state}</b></div>
+         <div class="sv" style="font-size:.85rem;color:${CLS_COLORS[a.classification]||"var(--ink)"}">${a.classification||"—"}</div>
+         <div class="tdef">${a.confidence?`confianza ${(a.confidence*100).toFixed(0)}% · `:""}
+           ${a.last_event||""}${a.baseline_sha256?"":` · nunca en baseline`}</div>
+        </div>`).join("");
+}
+
+document.querySelectorAll(".ranges button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".ranges button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on"); DAYS=+b.dataset.d; loadStats();
+});
+document.getElementById("repForm").onsubmit=async e=>{
+  e.preventDefault();
+  const r = await api("/api/v1/statistics/reports","POST",
+    {name:document.getElementById("repName").value||"informe",
+     days:+document.getElementById("repDays").value});
+  document.getElementById("repName").value="";
+  loadReports();
+};
+
+loadStats(); loadReports(); loadMapping(); loadTelemetry(); loadCoverage();
+setInterval(loadStats, 30000);
+setInterval(loadTelemetry, 30000);
+setInterval(loadCoverage, 30000);
+</script>
+</body>
+</html>

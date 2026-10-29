@@ -1,0 +1,115 @@
+<!doctype html>
+<!-- qom Share — ajustes.
+
+     Config en vivo: retención de papelera (PUT /api/v1/share/config,
+     share.admin + sellado). Estado de backups qSBACKUP y detección/
+     correlación (solo lectura — su toggling vive en la config del
+     appliance, no en esta pantalla). Lo declarativo se muestra como
+     tal; nada finge un control que el backend no implementa. -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom Share — Ajustes</title>
+<link rel="stylesheet" href="/assets/share-ui.css">
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<script src="/assets/share-ui.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Ajustes</h1>
+<div class="sui-sub">Parámetros en vivo del share. Cambios sellados
+  en la cadena de evidencia.</div>
+<div class="sui-msg" id="msg"></div>
+<div class="sui-panel">
+  <h3>papelera</h3>
+  <div class="sui-row">
+    <label class="sui-mut">retención (días)</label>
+    <input class="sui-input" id="ret" type="number" min="1" max="3650" style="width:90px">
+    <button class="sui-btn primary" id="saveret">guardar</button>
+    <span class="sui-mut">los archivos en papelera se purgan solos al
+      vencer la retención</span>
+  </div>
+</div>
+<div class="sui-panel">
+  <h3>configuración vigente</h3>
+  <div id="cfg" class="sui-mut" style="line-height:1.8"></div>
+</div>
+<div class="sui-panel">
+  <h3>backups (qSBACKUP)</h3>
+  <div id="backups" class="sui-mut">consultando…</div>
+</div>
+<div class="sui-panel">
+  <h3>detección y correlación</h3>
+  <div id="detect" class="sui-mut">consultando…</div>
+</div>
+<script defer nonce="__CSP_NONCE__">
+document.addEventListener("DOMContentLoaded", () => {
+  ShareUI.layout("settings");
+  const msg = document.getElementById("msg");
+
+  const load = async () => {
+    try {
+      const s = await ShareUI.api("/api/v1/share/status");
+      document.getElementById("ret").value = s.retention_days;
+      document.getElementById("cfg").innerHTML = [
+        `bind <b>${ShareUI.esc(s.bind)}</b> (solo intranet)`,
+        `redes autorizadas: ${(s.allowed_networks || []).map(ShareUI.esc).join(", ") || "—"}`,
+        `share_root <code>${ShareUI.esc(s.share_root)}</code>`,
+        `usuarios declarados: ${s.users}`,
+        `onboarding: ${s.configured ? "completo" : "pendiente — <a href='/share/onboarding' style='color:var(--acc)'>ejecutar asistente</a>"}`,
+      ].join("<br>");
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+
+    try {
+      const b = await ShareUI.api("/api/v1/share/backups");
+      const items = b.snapshots || b.backups || [];
+      document.getElementById("backups").innerHTML = items.length
+        ? `${items.length} snapshot${items.length === 1 ? "" : "s"} registrado${items.length === 1 ? "" : "s"}
+           · snapshots horarios automáticos · restore desde staging
+           (fuera del share vivo — el operador valida antes de pisar
+           datos). Último: <b>${ShareUI.esc(items[0].created_at || items[0].ts || "—")}</b>`
+        : `sin snapshots todavía — el loop horario los crea solo con
+           el share configurado`;
+    } catch (e) {
+      document.getElementById("backups").textContent =
+        `backups: ${e.message}`;
+    }
+
+    try {
+      const i = await ShareUI.api("/api/v1/share/incidents");
+      const t = i.thresholds || {};
+      document.getElementById("detect").innerHTML = [
+        `tracker de ráfagas por usuario (ventana 300s) — activo`,
+        `correlación archivo×red: exfil / ransomware / lateral /
+         staging — activa cuando hay flujos de red en el pipeline`,
+        `umbrales: ${Object.entries(t).map(([k, v]) =>
+          `${ShareUI.esc(k)}=${ShareUI.esc(v)}`).join(" · ") || "defaults"}`,
+        `incidentes: ${(i.incidents || []).length} (decisión HITL por
+         API — /incidents/:id/decision)`,
+      ].join("<br>");
+    } catch (e) {
+      document.getElementById("detect").textContent =
+        `detección: ${e.message}`;
+    }
+  };
+
+  document.getElementById("saveret").onclick = async () => {
+    const days = parseInt(document.getElementById("ret").value);
+    try {
+      const r = await ShareUI.api("/api/v1/share/config", {
+        method: "PUT",
+        body: JSON.stringify({ retention_days: days }),
+      });
+      ShareUI.msg(msg, `retención ahora ${r.retention_days} días (sellado)`, "ok");
+      ShareUI.refreshStatus();
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  load();
+});
+</script>
+</body>
+</html>

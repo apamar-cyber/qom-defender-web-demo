@@ -1,0 +1,169 @@
+<!doctype html>
+<!-- qom Share — usuarios.
+
+     CRUD de usuarios del share + reset de credencial. El claro del
+     reset se muestra UNA SOLA VEZ (mismo contrato que el onboarding):
+     solo el hash queda persistido. El último admin no se puede
+     eliminar — el backend devuelve 409 y la página lo muestra. -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom Share — Usuarios</title>
+<link rel="stylesheet" href="/assets/share-ui.css">
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<script src="/assets/share-ui.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Usuarios</h1>
+<div class="sui-sub">Acceso al share. Las credenciales nativas
+  (SMB/SFTP) dependen de la configuración de los daemons — el hash
+  queda listo para cuando el helper de identidad lo consuma.</div>
+<div class="sui-msg" id="msg"></div>
+<div class="sui-panel">
+  <h3>alta de usuario</h3>
+  <div class="sui-row">
+    <input class="sui-input" id="nuser" placeholder="usuario (a-z0-9_.-)" style="width:160px">
+    <input class="sui-input" id="ndisp" placeholder="nombre visible" style="width:160px">
+    <input class="sui-input" id="nemail" placeholder="email (opcional)" style="width:200px">
+    <select class="sui-select" id="nrole">
+      <option>viewer</option><option>editor</option><option>admin</option>
+    </select>
+    <select class="sui-select" id="ntenant">
+      <option value="">global (todos)</option>
+    </select>
+    <input class="sui-input" id="nquota" placeholder="cuota bytes (opcional)" style="width:150px">
+    <input class="sui-input" id="npass" placeholder="password inicial (opcional)" type="password" style="width:180px">
+    <button class="sui-btn primary" id="create">crear</button>
+  </div>
+</div>
+<table class="sui-table">
+  <thead><tr><th>usuario</th><th>nombre</th><th>rol</th><th>tenant</th><th>email</th>
+    <th>cuota</th><th>último acceso</th><th></th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<div class="sui-panel" id="oneshot" style="display:none"></div>
+<script defer nonce="__CSP_NONCE__">
+document.addEventListener("DOMContentLoaded", () => {
+  ShareUI.layout("users");
+  const msg = document.getElementById("msg");
+  const rows = document.getElementById("rows");
+
+  const load = async () => {
+    try {
+      const { tenants } = await ShareUI.api("/api/v1/share/tenants");
+      const sel = document.getElementById("ntenant");
+      sel.innerHTML = `<option value="">global (todos)</option>` +
+        tenants.map((t) =>
+          `<option value="${ShareUI.esc(t.id)}">${ShareUI.esc(t.id)}</option>`).join("");
+    } catch { /* sin tenants o sin permiso — el select queda en global */ }
+    try {
+      const { users } = await ShareUI.api("/api/v1/share/users");
+      rows.innerHTML = users.length ? users.map((u) => `<tr>
+        <td><b>${ShareUI.esc(u.username)}</b></td>
+        <td>${ShareUI.esc(u.display_name)}</td>
+        <td><span class="sui-badge ${u.role === "admin" ? "bad" : u.role === "editor" ? "warn" : "acc"}">${ShareUI.esc(u.role)}</span></td>
+        <td class="sui-mut">${(() => {
+          const g = u.tenants ? Object.entries(u.tenants).map(([t, r]) => `${t}:${r}`) : [];
+          if (u.tenant && !g.some((s) => s.startsWith(u.tenant + ":"))) g.unshift(`${u.tenant}:${u.role}`);
+          return ShareUI.esc(g.join(" · ") || "global");
+        })()}</td>
+        <td class="sui-mut">${ShareUI.esc(u.email || "—")}</td>
+        <td class="sui-mut">${u.quota_bytes ? ShareUI.fmtBytes(u.quota_bytes) : "—"}</td>
+        <td class="sui-mut">${ShareUI.fmtTime(u.last_seen)}</td>
+        <td style="white-space:nowrap">
+          <a data-e="${ShareUI.esc(u.username)}">editar</a> ·
+          <a data-r="${ShareUI.esc(u.username)}">reset</a> ·
+          <a data-x="${ShareUI.esc(u.username)}" style="color:var(--bad)">eliminar</a></td>
+      </tr>`).join("") : `<tr><td colspan="8" class="sui-mut">
+        sin usuarios declarados — el share corre en modo embebido
+        (acceso de la consola); el asistente declara usuarios reales</td></tr>`;
+      document.querySelectorAll("a[data-x]").forEach((a) =>
+        (a.onclick = () => del(a.dataset.x)));
+      document.querySelectorAll("a[data-r]").forEach((a) =>
+        (a.onclick = () => reset(a.dataset.r)));
+      document.querySelectorAll("a[data-e]").forEach((a) =>
+        (a.onclick = () => edit(a.dataset.e)));
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  document.getElementById("create").onclick = async () => {
+    const body = {
+      username: document.getElementById("nuser").value.trim(),
+      display_name: document.getElementById("ndisp").value.trim(),
+      email: document.getElementById("nemail").value.trim() || null,
+      role: document.getElementById("nrole").value,
+      quota_bytes: parseInt(document.getElementById("nquota").value) || null,
+      tenant: document.getElementById("ntenant").value || null,
+      password: document.getElementById("npass").value || null,
+    };
+    if (!body.username || !body.display_name) {
+      ShareUI.msg(msg, "usuario y nombre visibles son obligatorios", "err");
+      return;
+    }
+    try {
+      await ShareUI.api("/api/v1/share/users",
+        { method: "POST", body: JSON.stringify(body) });
+      ShareUI.msg(msg, `usuario ${body.username} creado`, "ok");
+      load();
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  const edit = async (u) => {
+    const role = prompt(`Rol de ${u} (admin | editor | viewer):`);
+    if (role === null) return;
+    const display = prompt(`Nombre visible de ${u} (vacío = sin cambio):`);
+    const body = {};
+    if (role) body.role = role;
+    if (display) body.display_name = display;
+    if (!Object.keys(body).length) return;
+    try {
+      await ShareUI.api(`/api/v1/share/users/${encodeURIComponent(u)}`,
+        { method: "PUT", body: JSON.stringify(body) });
+      ShareUI.msg(msg, `${u} actualizado`, "ok");
+      load();
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  const reset = async (u) => {
+    const custom = prompt(
+      `Nueva contraseña para ${u} (mín. 8 caracteres).\nDejá vacío para generar una aleatoria:`);
+    if (custom === null) return;
+    const body = custom.trim().length >= 8 ? { password: custom.trim() } : {};
+    if (!confirm(custom.trim().length >= 8
+      ? `¿Fijar la contraseña indicada para ${u}? Se muestra una sola vez.`
+      : `¿Generar una credencial nueva para ${u}? Se muestra una sola vez.`)) return;
+    try {
+      const r = await ShareUI.api(
+        `/api/v1/share/users/${encodeURIComponent(u)}/reset-password`,
+        { method: "POST", body: JSON.stringify(body) });
+      const el = document.getElementById("oneshot");
+      el.style.display = "block";
+      el.innerHTML = `<h3>credencial nueva — se muestra una sola vez</h3>
+        <div class="sui-mut">usuario</div><b>${ShareUI.esc(r.username)}</b>
+        <div class="sui-mut" style="margin-top:.5rem">password</div>
+        <code style="font-size:1rem;color:var(--ok)">${ShareUI.esc(r.password)}</code>
+        <div class="sui-mut" style="margin-top:.6rem">
+          copiála ahora — el servidor solo guarda el hash; no hay forma
+          de volver a verla. Un reset nuevo la invalida.</div>`;
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  const del = async (u) => {
+    if (!confirm(`¿Eliminar al usuario ${u}?`)) return;
+    try {
+      await ShareUI.api(`/api/v1/share/users/${encodeURIComponent(u)}`,
+        { method: "DELETE" });
+      ShareUI.msg(msg, `${u} eliminado`, "ok");
+      load();
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  load();
+});
+</script>
+</body>
+</html>

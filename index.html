@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QOM Defender — Demo estática</title>
+  <style>
+    :root {
+      --bg: #0b1218;
+      --surface: #121c26;
+      --text: #e6eef4;
+      --muted: #8aa0b2;
+      --acc: #3db8c5;
+      --line: #243040;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background:
+        radial-gradient(900px 500px at 10% -10%, #1a3a48 0%, transparent 55%),
+        radial-gradient(700px 400px at 90% 0%, #1a2838 0%, transparent 50%),
+        var(--bg);
+      color: var(--text);
+    }
+    main {
+      max-width: 880px; margin: 0 auto; padding: 3.5rem 1.25rem 4rem;
+    }
+    .brand {
+      font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; letter-spacing: -.02em;
+      margin: 0 0 .35rem;
+    }
+    .tag {
+      display: inline-block; font-size: .72rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .08em;
+      color: var(--acc); border: 1px solid #2a5a66; border-radius: 999px;
+      padding: .2rem .65rem; margin-bottom: 1rem;
+    }
+    .lede { color: var(--muted); font-size: 1.05rem; line-height: 1.55; max-width: 42rem; }
+    .cta {
+      display: inline-block; margin-top: 1.5rem; padding: .75rem 1.25rem;
+      background: var(--acc); color: #062028; font-weight: 700; text-decoration: none;
+      border-radius: 8px;
+    }
+    .cta:hover { filter: brightness(1.08); }
+    h2 { margin: 2.5rem 0 .75rem; font-size: 1.1rem; }
+    ul.pages {
+      list-style: none; padding: 0; margin: 0;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .5rem;
+    }
+    ul.pages a {
+      display: block; padding: .65rem .8rem; background: var(--surface);
+      border: 1px solid var(--line); border-radius: 8px; color: var(--text);
+      text-decoration: none; font-size: .9rem;
+    }
+    ul.pages a:hover { border-color: var(--acc); }
+    .note {
+      margin-top: 2rem; padding: 1rem; border: 1px solid var(--line);
+      border-radius: 8px; color: var(--muted); font-size: .88rem; line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <span class="tag">Vitrina web · sin appliance</span>
+    <h1 class="brand">QOM Defender</h1>
+    <p class="lede">
+      Recorré la consola SOC y el resto de pantallas tal como se ven en el producto.
+      Es una <b>demo estática</b>: menús, layouts y textos de ejemplo; las acciones
+      no se ejecutan contra un equipo real.
+    </p>
+    <a class="cta" href="console.html">Abrir consola (Live / BLUE / RED…)</a>
+
+    <h2>Otras páginas del producto</h2>
+    <ul class="pages" id="page-list"></ul>
+
+    <p class="note">
+      Para publicarlo: subí toda la carpeta <code>static-demo/</code> a Netlify,
+      Cloudflare Pages, GitHub Pages o cualquier hosting estático.
+      Comando local: <code>python3 -m http.server 8765</code> dentro de esta carpeta.
+    </p>
+  </main>
+  <script>
+    const pages = [
+      ["console.html", "Consola SOC"],
+      ["pages/analyze.html", "Analyze"],
+      ["pages/appliance.html", "Appliance"],
+      ["pages/asist.html", "Asistente"],
+      ["pages/camera.html", "Cámara"],
+      ["pages/compliance.html", "Compliance"],
+      ["pages/cspm.html", "CSPM"],
+      ["pages/dataflow.html", "Dataflow"],
+      ["pages/discovery.html", "Discovery"],
+      ["pages/greenteam.html", "Green team"],
+      ["pages/learn.html", "Qom Learn"],
+      ["pages/mail.html", "Mail"],
+      ["pages/pentest.html", "Pentest"],
+      ["pages/program.html", "Program"],
+      ["pages/qverilinks.html", "qVERILINKS"],
+      ["pages/qverilinks-revision.html", "qVERILINKS revisión"],
+      ["pages/setup.html", "Setup"],
+      ["pages/setup-modules.html", "Setup módulos"],
+      ["pages/statistics.html", "Estadísticas"],
+      ["pages/storage.html", "Storage"],
+      ["pages/share-index.html", "Share"],
+      ["pages/share-files.html", "Share · archivos"],
+      ["pages/share-activity.html", "Share · actividad"],
+      ["pages/share-users.html", "Share · usuarios"],
+      ["pages/share-tenants.html", "Share · tenants"],
+      ["pages/share-permissions.html", "Share · permisos"],
+      ["pages/share-settings.html", "Share · ajustes"],
+      ["pages/share-onboarding.html", "Share · onboarding"],
+      ["pages/share-trash.html", "Share · papelera"],
+    ];
+    document.getElementById("page-list").innerHTML = pages.map(([href, label]) =>
+      `<li><a href="${href}">${label}</a></li>`
+    ).join("");
+  </script>
+</body>
+</html>

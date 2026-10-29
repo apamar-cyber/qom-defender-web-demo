@@ -1,0 +1,162 @@
+<!doctype html>
+<!-- Setup de módulos — despliegue por perfil de uso.
+
+     Alcance honesto: este asistente cubre la selección de
+     módulos (perfil → personalizar → aplicar → resumen). Los
+     pasos de red/storage/organización/admin/email son del
+     instalador del appliance (imagen/particionado/LUKS2) o del
+     asistente de organización (/setup/) — no se simulan acá.
+     Cada aplicación sella el resultado. -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>QOM Defender — Setup de módulos</title>
+<link rel="stylesheet" href="/assets/share-ui.css">
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<script src="/assets/share-ui.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="padding:1rem 2rem;max-width:1000px">
+<h1>Setup — despliegue de módulos</h1>
+<div class="sui-sub">El perfil es una recomendación — podés ajustar
+  la selección antes de aplicar. Los módulos requeridos no se
+  pueden apagar. (La configuración de organización está en
+  <a href="/setup/" style="color:var(--acc,#6aa88a)">/setup/</a>.)</div>
+<div class="sui-msg" id="msg"></div>
+
+<div class="sui-panel" id="step1">
+  <h3>paso 1 — elegir perfil</h3>
+  <div id="profileGrid"></div>
+</div>
+
+<div class="sui-panel" id="step2" style="display:none">
+  <h3>paso 2 — módulos</h3>
+  <div id="modChoice"></div>
+  <div id="modPick" style="display:none"></div>
+  <div class="sui-row" style="margin-top:.5rem">
+    <input class="sui-input" id="reason" placeholder="motivo (sellado en evidencia)" style="width:320px" value="setup inicial">
+    <button class="sui-btn primary" id="applyBtn">aplicar selección</button>
+    <button class="sui-btn" id="backBtn">atrás</button>
+  </div>
+</div>
+
+<div class="sui-panel" id="step3" style="display:none">
+  <h3>resultado</h3>
+  <div id="applyOut"></div>
+</div>
+
+<script defer nonce="__CSP_NONCE__">
+document.addEventListener("DOMContentLoaded", () => {
+  const msg = document.getElementById("msg");
+  let profiles = [], modules = [], chosen = null, selected = new Set();
+
+  const init = async () => {
+    try {
+      const [p, m, cur] = await Promise.all([
+        ShareUI.api("/api/v1/appliance/profiles"),
+        ShareUI.api("/api/v1/appliance/modules"),
+        ShareUI.api("/api/v1/appliance/profile"),
+      ]);
+      profiles = p.profiles; modules = m.modules;
+      document.getElementById("profileGrid").innerHTML = profiles
+        .map((pr) => `<div style="display:inline-block;border:1px solid #444;
+          border-radius:6px;padding:.5rem .7rem;margin:.25rem;min-width:220px;
+          vertical-align:top;${cur.profile_id === pr.id ? "border-color:var(--ok,#2a2)" : ""}">
+          <b>${ShareUI.esc(pr.icon)} ${ShareUI.esc(pr.name)}</b>
+          <div class="sui-mut" style="font-size:.75rem">${ShareUI.esc(pr.description)}</div>
+          <div class="sui-mut" style="font-size:.7rem;margin:.25rem 0">
+            recomendados: ${pr.recommended_modules.length} · requeridos: ${pr.required_modules.length}</div>
+          <button class="sui-btn" data-p="${pr.id}">elegir</button></div>`)
+        .join("");
+      document.querySelectorAll("button[data-p]").forEach((b) =>
+        (b.onclick = () => pick(b.dataset.p)));
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  const pick = (id) => {
+    chosen = profiles.find((p) => p.id === id);
+    selected = new Set(chosen.recommended_modules);
+    modules.forEach((m) => { if (m.required || chosen.required_modules.includes(m.id)) selected.add(m.id); });
+    const recNames = chosen.recommended_modules.map((mid) =>
+      (modules.find((x) => x.id === mid) || { name: mid }).name).join(", ");
+    document.getElementById("modChoice").innerHTML =
+      `<div style="margin:.4rem 0"><b>Perfil: ${ShareUI.esc(chosen.icon)} ${ShareUI.esc(chosen.name)}</b></div>
+       <label style="display:block;margin:.3rem 0">
+         <input type="radio" name="modmode" value="rec" checked>
+         Usar las recomendaciones del perfil
+         <div class="sui-mut" style="font-size:.72rem;margin-left:1.2rem">${ShareUI.esc(recNames)}</div>
+       </label>
+       <label style="display:block;margin:.3rem 0">
+         <input type="radio" name="modmode" value="custom">
+         Personalizar antes de continuar
+       </label>`;
+    document.querySelectorAll("input[name=modmode]").forEach((r) =>
+      (r.onchange = () => {
+        document.getElementById("modPick").style.display =
+          r.value === "custom" && r.checked ? "" : "none";
+        if (r.value === "custom" && r.checked) renderCustom();
+      }));
+    document.getElementById("modPick").style.display = "none";
+    document.getElementById("step2").style.display = "";
+  };
+
+  // Tres grupos: requeridos 🔒 / recomendados ☑ / no aplica ☐.
+  const renderCustom = () => {
+    const isReq = (m) => chosen.required_modules.includes(m.id) || m.required;
+    const isRec = (m) => chosen.recommended_modules.includes(m.id);
+    const isNot = (m) => chosen.not_recommended_modules.includes(m.id);
+    const grp = (title, list, note) => list.length ?
+      `<div style="margin:.4rem 0"><b style="font-size:.85rem">${title}</b>
+       ${note ? `<div class="sui-mut" style="font-size:.7rem">${note}</div>` : ""}
+       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.2rem;font-size:.85rem">` +
+      list.map((m) => `<label><input type="checkbox" data-m="${m.id}"
+          ${selected.has(m.id) ? "checked" : ""} ${isReq(m) ? "disabled" : ""}>
+          ${ShareUI.esc(m.name)}${isReq(m) ? " 🔒" : ""}</label>`).join("") +
+      `</div></div>` : "";
+    document.getElementById("modPick").innerHTML =
+      grp("requeridos (siempre activos)", modules.filter(isReq), "") +
+      grp("recomendados para " + chosen.name, modules.filter((m) => isRec(m) && !isReq(m)),
+          "se activan por defecto — podés apagarlos") +
+      grp("NO recomendados (no aplican al perfil)",
+          modules.filter((m) => isNot(m) || (!isRec(m) && !isReq(m))),
+          "podés activarlos igual si los necesitás");
+    document.querySelectorAll("input[data-m]").forEach((cb) =>
+      (cb.onchange = () => cb.checked ? selected.add(cb.dataset.m) : selected.delete(cb.dataset.m)));
+  };
+
+  document.getElementById("backBtn").onclick = () => {
+    document.getElementById("step2").style.display = "none";
+  };
+
+  document.getElementById("applyBtn").onclick = async () => {
+    try {
+      const r = await ShareUI.api("/api/v1/appliance/setup", {
+        method: "POST",
+        body: JSON.stringify({
+          profile_id: chosen.id,
+          selected_modules: [...selected],
+          reason: document.getElementById("reason").value.trim() || "setup inicial",
+        }),
+      });
+      const x = r.result;
+      document.getElementById("step3").style.display = "";
+      document.getElementById("applyOut").innerHTML =
+        `✅ <b>${ShareUI.esc(chosen.name)}</b> aplicado y sellado ·
+         activados: ${x.activated.length} · desactivados: ${x.deactivated.length}
+         <div class="sui-mut" style="font-size:.8rem;margin-top:.3rem">
+         ${x.activated.length ? "+" + x.activated.join(", ") : ""}
+         ${x.deactivated.length ? "<br>−" + x.deactivated.join(", ") : ""}</div>
+         <div style="margin-top:.4rem"><a href="/appliance">ir a Appliance > Módulos</a></div>`;
+      ShareUI.msg(msg, "selección aplicada y sellada", "ok");
+      init();
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  init();
+});
+</script>
+</body>
+</html>

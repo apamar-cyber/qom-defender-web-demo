@@ -1,0 +1,362 @@
+<!doctype html>
+<!-- qom Storage — identidad y ciclo de vida de discos.
+
+     Seis vistas del diseño QOM Storage: Resumen (espacio/VG/swap/
+     alertas/mantenimiento), Discos físicos (registro paginado por
+     slot), Particiones (bloques presentes hoy), Salud (SMART por
+     slot), Reemplazos (ciclo R1/R2… del slot) y Cuarentena (discos
+     retirados con ventana de revisión).
+
+     Honestidad: todo lo que se ve viene de /api/v1/storage/* —
+     si el endpoint no tiene datos, la vista lo dice, no inventa.
+     Las acciones que mutan (adopt, retire, replacement, quarantine)
+     exigen rol admin/operator y confirmación con motivo — igual que
+     la API. -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom Storage</title>
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --bg:#0b1420; --card:#152233; --card2:#1a2d42; --ink:#d7e3ef;
+  --dim:#7f95ab; --mut:#243447; --acc:#4a7cb0; --warn:#c4a35a; --bad:#c07a7a;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;font-size:13px}
+.wrap{max-width:1150px;margin:0 auto;padding:1.2rem}
+.top{display:flex;justify-content:space-between;align-items:baseline;
+  flex-wrap:wrap;gap:.8rem;margin-bottom:1rem}
+.brand{font-size:1.35rem;font-weight:700}
+.brand em{color:var(--acc);font-style:normal}
+.back{color:var(--acc);text-decoration:none;font-size:.8rem}
+.tabs{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem}
+.tab{background:var(--card);border:1px solid var(--mut);color:var(--dim);
+  padding:.45rem 1rem;border-radius:6px 6px 0 0;cursor:pointer;
+  font-family:inherit;font-size:.8rem}
+.tab.on{color:var(--acc);border-color:var(--acc);border-bottom-color:var(--card)}
+.sec{background:var(--card);border:1px solid var(--mut);border-radius:0 8px 8px;
+  padding:1rem 1.2rem;margin-bottom:1.2rem;min-height:8rem}
+.sec h2{margin:.1rem 0 .6rem;font-size:1rem;color:var(--acc)}
+.hint{color:var(--dim);font-size:.72rem;margin-bottom:.8rem;line-height:1.5}
+.badge{display:inline-block;background:var(--card2);border:1px solid var(--mut);
+  padding:.12rem .55rem;border-radius:10px;font-size:.65rem;color:var(--acc);
+  margin:.15rem .25rem .15rem 0;white-space:nowrap}
+.badge.warn{border-color:var(--warn);color:var(--warn)}
+.badge.bad{border-color:var(--bad);color:var(--bad)}
+.badge.dim{color:var(--dim)}
+table{width:100%;border-collapse:collapse;font-size:.75rem}
+th,td{padding:.4rem .5rem;border-bottom:1px solid var(--mut);text-align:left;vertical-align:top}
+th{color:var(--dim);font-weight:600;font-size:.66rem;text-transform:uppercase;
+  letter-spacing:.05em}
+tr.rep{cursor:pointer}
+tr.rep:hover{background:var(--card2)}
+.big{font-size:1.5rem;font-weight:700;color:var(--acc)}
+.big.warn{color:var(--warn)} .big.bad{color:var(--bad)}
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+  gap:.8rem;margin-bottom:.8rem}
+.kv .k{background:var(--card2);border:1px solid var(--mut);border-radius:6px;
+  padding:.6rem .8rem}
+.kv .k .lbl{color:var(--dim);font-size:.62rem;text-transform:uppercase;
+  letter-spacing:.05em}
+.kv .k .val{font-size:1rem;margin-top:.25rem}
+.err{color:var(--bad);font-size:.75rem;margin-top:.5rem}
+.foot{margin-top:2rem;padding:1rem 0 .4rem;border-top:1px solid var(--mut);
+  color:var(--dim);font-size:.68rem;text-align:center;letter-spacing:.03em}
+.bar{background:var(--mut);border-radius:3px;height:8px;overflow:hidden}
+.bar>div{height:100%;background:var(--acc)}
+.bar>div.warn{background:var(--warn)} .bar>div.bad{background:var(--bad)}
+</style>
+  <link rel="stylesheet" href="/assets/ui-kit.css">
+  <script src="/assets/ui-kit.js" nonce="__CSP_NONCE__"></script>
+</head>
+<body>
+<header>
+  <div class="mark">QΩ</div>
+  <h1>Qom Storage</h1>
+  <a class="back" href="/">← Live</a>
+</header>
+<div class="wrap">
+  <div id="uk-strip"></div>
+
+  <div class="tabs" id="tabs"></div>
+  <div id="view"></div>
+
+  <div class="foot">qom Defender OS · identidad de discos sellada · sin datos inventados</div>
+</div>
+
+<script nonce="__CSP_NONCE__">
+"use strict";
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function api(path,opts){
+  opts=opts||{};opts.credentials="same-origin";
+  if(opts.body&&typeof opts.body!=="string"){
+    opts.headers={"Content-Type":"application/json"};
+    opts.body=JSON.stringify(opts.body);
+  }
+  return fetch(path,opts).then(function(r){
+    return r.json().catch(function(){return{};}).then(function(j){
+      if(!r.ok){var e=new Error(j.error||("HTTP "+r.status));e.status=r.status;throw e;}
+      return j;
+    });
+  });
+}
+function pct(x){return (typeof x==="number")?x.toFixed(1)+"%":"—";}
+function gb(x){return (typeof x==="number")?(x/1073741824).toFixed(1)+" GB":"—";}
+function fmtTs(x){return x?esc(String(x).replace("T"," ").slice(0,19)):"—";}
+function bar(p){
+  var c=p<10?"bad":(p<25?"warn":"");
+  return '<div class="bar"><div class="'+c+'" style="width:'+Math.min(100,p)+'%"></div></div>';
+}
+function badgeStatus(s){
+  var map={Present:"",Missing:"bad",Retired:"dim",Quarantine:"warn",
+    Quarantined:"warn",Destroyed:"dim",Adopting:"warn"};
+  return '<span class="badge '+(map[s]||"dim")+'">'+esc(s)+'</span>';
+}
+
+var TABS=[
+  ["resumen","Resumen"],["discos","Discos físicos"],["particiones","Particiones"],
+  ["salud","Salud"],["reemplazos","Reemplazos"],["cuarentena","Cuarentena"]
+];
+var CUR="resumen";
+
+function tabsHtml(){
+  document.getElementById("tabs").innerHTML=TABS.map(function(t){
+    return '<button class="tab'+(t[0]===CUR?" on":"")+'" data-t="'+t[0]+'">'+t[1]+'</button>';
+  }).join("");
+  document.querySelectorAll(".tab").forEach(function(b){
+    b.onclick=function(){CUR=b.dataset.t;render();};
+  });
+}
+
+// ---------- Resumen ----------
+function vResumen(){
+  return Promise.all([
+    api("/api/v1/storage/status"),
+    api("/api/v1/storage/dashboard"),
+    api("/api/v1/storage/extend/status"),
+    api("/api/v1/org/info")
+  ]).then(function(r){
+    var s=r[0],d=r[1],x=r[2],o=r[3];
+    var h='<h2>Resumen</h2><div class="hint">'+
+      'Estado en vivo del almacenamiento del appliance. Umbral de alerta: '+
+      esc(s.alert_threshold_pct)+'% libre. Cada transición de disco se sella '+
+      'en la cadena de evidencia.</div><div class="kv">';
+    (s.mounts||[]).forEach(function(m){
+      var free=(typeof m.free_pct==="number")?m.free_pct:null;
+      var cls=free==null?"":(free<10?" bad":(free<25?" warn":""));
+      h+='<div class="k"><div class="lbl">'+esc(m.mount)+'</div>'+
+         '<div class="val big'+cls+'">'+(free==null?"—":free.toFixed(1)+"% libre")+'</div>'+
+         (free!=null?bar(free):"")+'<div class="lbl" style="margin-top:.3rem">'+
+         gb(m.free_bytes)+' de '+gb(m.total_bytes)+'</div></div>';
+    });
+    if(s.vg){
+      h+='<div class="k"><div class="lbl">VG '+esc(s.vg.name||"qom-vg")+'</div>'+
+         '<div class="val">'+(s.vg.free_pct!=null?s.vg.free_pct.toFixed(1)+"% libre":"—")+'</div></div>';
+    }
+    if(s.swap){
+      h+='<div class="k"><div class="lbl">swap</div>'+
+         '<div class="val">'+pct(s.swap.used_pct)+' usado</div></div>';
+    }
+    h+='</div>';
+    // Org + identidad
+    h+='<h2>Organización</h2>';
+    if(o&&o.org_id){
+      h+='<div class="kv"><div class="k"><div class="lbl">org</div>'+
+         '<div class="val">'+esc(o.org_id)+'</div><div class="lbl">'+esc(o.appliance_name||"")+'</div></div>'+
+         '<div class="k"><div class="lbl">slots registrados</div><div class="val">'+
+         esc(o.slots!=null?o.slots:(d.disks||[]).length)+'</div></div></div>';
+    }else{
+      h+='<div class="hint">Org no inicializada — los discos nuevos quedan '+
+         'anónimos (sin token/keyslot org). Inicializar con '+
+         '<code>storage org-init</code>.</div>';
+    }
+    // Mantenimiento + alertas
+    if(s.maintenance){
+      h+='<h2>Mantenimiento</h2><div class="kv"><div class="k"><div class="lbl">ventana</div>'+
+         '<div class="val">'+fmtTs(s.maintenance.starts_at)+' → '+fmtTs(s.maintenance.ends_at)+'</div>'+
+         '<div class="lbl">'+badgeStatus(s.maintenance.status||"scheduled")+' '+
+         esc(s.maintenance.reason||"")+'</div></div></div>';
+    }
+    if(s.alerts&&s.alerts.length){
+      h+='<h2>Alertas</h2>';
+      s.alerts.forEach(function(a){h+='<div class="badge bad">'+esc(a)+'</div>';});
+    }
+    if(s.new_disks&&s.new_disks.length){
+      h+='<h2>Discos nuevos detectados</h2><table><thead><tr><th>device</th><th>serial</th><th>modelo</th><th>tamaño</th></tr></thead><tbody>';
+      s.new_disks.forEach(function(dk){
+        h+='<tr><td>'+esc(dk.path||dk.name)+'</td><td>'+esc(dk.serial||"—")+'</td>'+
+           '<td>'+esc(dk.model||"—")+'</td><td>'+gb(dk.size)+'</td></tr>';
+      });
+      h+='</tbody></table><div class="hint">No se tocan automáticamente — '+
+         'enrolar exige confirmación del operador.</div>';
+    }
+    // Extensión en curso
+    if(x&&(x.state||x.step)){
+      h+='<h2>Extensión en curso</h2><div class="kv"><div class="k"><div class="lbl">paso</div>'+
+         '<div class="val">'+esc(x.step||x.state)+'</div><div class="lbl">'+
+         esc(x.device||"")+' → '+esc(x.mount||"")+'</div></div></div>';
+    }
+    return h;
+  });
+}
+
+// ---------- Discos físicos (registro paginado) ----------
+function vDiscos(){
+  return Promise.all([
+    api("/api/v1/storage/disks"),
+    api("/api/v1/storage/dashboard")
+  ]).then(function(r){
+    var disks=r[0].disks||r[0].entries||r[0]||[];
+    var h='<h2>Discos físicos</h2><div class="hint">'+
+      'Registro paginado por slot. La identidad lógica '+
+      '(<code>R2-WD-004</code>) persiste aunque cambie el hardware — '+
+      'la generación cuenta los reemplazos del slot.</div>'+
+      '<table><thead><tr><th>slot</th><th>id lógico</th><th>serial</th>'+
+      '<th>modelo</th><th>gen</th><th>estado</th><th>asignado</th></tr></thead><tbody>';
+    if(!disks.length){h+='<tr><td colspan="7" class="hint">registro vacío — '+
+      'ningún disco adoptado todavía</td></tr>';}
+    disks.forEach(function(d){
+      h+='<tr><td>'+esc(d.slot)+'</td><td>'+esc(d.logical_id||("SLOT-"+d.slot))+
+         '</td><td>'+esc(d.serial||"—")+'</td><td>'+esc(d.model||"—")+'</td>'+
+         '<td>'+esc(d.generation!=null?d.generation:"0")+'</td>'+
+         '<td>'+badgeStatus(d.status)+'</td><td>'+fmtTs(d.assigned_at)+'</td></tr>';
+    });
+    h+='</tbody></table>';
+    return h;
+  });
+}
+
+// ---------- Particiones presentes ----------
+function vParticiones(){
+  return api("/api/v1/storage/status").then(function(s){
+    var devs=s.block_devices||s.devices||[];
+    var h='<h2>Particiones</h2><div class="hint">Dispositivos de bloque '+
+      'presentes ahora (lsblk del appliance). Un disco con '+
+      '<code>children</code> vacío es candidato de adopción.</div>'+
+      '<table><thead><tr><th>dispositivo</th><th>tamaño</th><th>serial</th>'+
+      '<th>particiones</th><th>montado</th></tr></thead><tbody>';
+    if(!devs.length){h+='<tr><td colspan="5" class="hint">sin datos de '+
+      'dispositivos — ¿corre en un appliance?</td></tr>';}
+    devs.forEach(function(d){
+      var kids=(d.children||[]).map(function(c){return esc(c.name||c.path);}).join(", ")||"—";
+      var mnt=(d.children||[]).map(function(c){return c.mountpoint;}).filter(Boolean).join(", ")||esc(d.mountpoint||"—");
+      h+='<tr><td>'+esc(d.path||d.name)+'</td><td>'+gb(d.size)+'</td>'+
+         '<td>'+esc(d.serial||"—")+'</td><td>'+kids+'</td><td>'+mnt+'</td></tr>';
+    });
+    h+='</tbody></table>';
+    return h;
+  });
+}
+
+// ---------- Salud SMART ----------
+function vSalud(){
+  return api("/api/v1/storage/dashboard").then(function(d){
+    var hs=d.disk_health||[];
+    var h='<h2>Salud</h2><div class="hint">SMART por slot del registro — '+
+      'riesgo agregado por el monitor. Click para el detalle.</div>'+
+      '<table><thead><tr><th>slot</th><th>id lógico</th><th>serial</th>'+
+      '<th>estado</th><th>riesgo SMART</th></tr></thead><tbody>';
+    if(!hs.length){h+='<tr><td colspan="5" class="hint">sin discos '+
+      'registrados</td></tr>';}
+    hs.forEach(function(x){
+      var risk=esc(x.smart_risk||"unknown");
+      var cls=risk==="ok"?"":(risk==="warning"?"warn":"bad");
+      h+='<tr class="rep" data-slot="'+esc(x.slot)+'"><td>'+esc(x.slot)+'</td>'+
+         '<td>'+esc(x.logical_id||"—")+'</td><td>'+esc(x.serial||"—")+'</td>'+
+         '<td>'+badgeStatus(x.status)+'</td>'+
+         '<td><span class="badge '+cls+'">'+risk+'</span></td></tr>';
+    });
+    h+='</tbody></table><div id="hdetail"></div>';
+    setTimeout(function(){
+      document.querySelectorAll("tr.rep").forEach(function(tr){
+        tr.onclick=function(){
+          api("/api/v1/storage/health/"+tr.dataset.slot).then(function(det){
+            document.getElementById("hdetail").innerHTML=
+              '<h2>SMART slot '+esc(tr.dataset.slot)+'</h2>'+
+              '<pre style="font-size:.7rem;white-space:pre-wrap">'+
+              esc(JSON.stringify(det,null,2))+'</pre>';
+          }).catch(function(e){
+            document.getElementById("hdetail").innerHTML=
+              '<div class="err">'+esc(e.message)+'</div>';
+          });
+        };
+      });
+    },0);
+    return h;
+  });
+}
+
+// ---------- Reemplazos ----------
+function vReemplazos(){
+  return api("/api/v1/storage/dashboard").then(function(d){
+    var ops=d.replacements||d.replacement_ops||[];
+    var h='<h2>Reemplazos</h2><div class="hint">'+
+      'Ciclo de vida del slot: el disco saliente pasa a cuarentena, el '+
+      'nuevo hereda la identidad lógica con generación R&lt;n&gt;. '+
+      'Iniciar/transferir/abortar son POST sellados desde CLI o API — '+
+      'acá se monitorea.</div>'+
+      '<table><thead><tr><th>slot</th><th>id lógico</th><th>gen</th>'+
+      '<th>saliente → entrante</th><th>estado</th><th>desde</th></tr></thead><tbody>';
+    if(!ops.length){h+='<tr><td colspan="6" class="hint">ningún reemplazo '+
+      'en curso ni reciente</td></tr>';}
+    ops.forEach(function(op){
+      h+='<tr><td>'+esc(op.slot)+'</td><td>'+esc(op.logical_id||"—")+'</td>'+
+         '<td>'+esc(op.generation!=null?op.generation:"—")+'</td>'+
+         '<td>'+esc(op.old_serial||"—")+' → '+esc(op.new_serial||"?")+'</td>'+
+         '<td>'+badgeStatus(op.state||op.status)+'</td><td>'+fmtTs(op.started_at)+'</td></tr>';
+    });
+    h+='</tbody></table>';
+    return h;
+  });
+}
+
+// ---------- Cuarentena ----------
+function vCuarentena(){
+  return api("/api/v1/storage/quarantine").then(function(q){
+    var items=q.items||q.disks||q||[];
+    var h='<h2>Cuarentena</h2><div class="hint">'+
+      'Discos retirados en ventana de revisión — la evidencia se preserva '+
+      'y el keyslot org queda neutralizado. Transcurrida la ventana se '+
+      'destruye la identidad (crypto-erase).</div>'+
+      '<table><thead><tr><th>slot</th><th>id lógico</th><th>serial</th>'+
+      '<th>motivo</th><th>entra</th><th>expira</th><th>estado</th></tr></thead><tbody>';
+    if(!items.length){h+='<tr><td colspan="7" class="hint">cuarentena '+
+      'vacía</td></tr>';}
+    items.forEach(function(d){
+      h+='<tr><td>'+esc(d.slot)+'</td><td>'+esc(d.logical_id||"—")+'</td>'+
+         '<td>'+esc(d.serial||"—")+'</td><td>'+esc(d.reason||"—")+'</td>'+
+         '<td>'+fmtTs(d.quarantined_at)+'</td><td>'+fmtTs(d.expires_at)+'</td>'+
+         '<td>'+badgeStatus(d.status||"quarantined")+'</td></tr>';
+    });
+    h+='</tbody></table>';
+    return h;
+  });
+}
+
+var VIEWS={resumen:vResumen,discos:vDiscos,particiones:vParticiones,
+  salud:vSalud,reemplazos:vReemplazos,cuarentena:vCuarentena};
+
+function render(){
+  tabsHtml();
+  var v=document.getElementById("view");
+  v.innerHTML='<section class="sec"><div class="hint">cargando…</div></section>';
+  (VIEWS[CUR]||vResumen)().then(function(h){
+    v.innerHTML='<section class="sec">'+h+'</section>';
+  }).catch(function(e){
+    v.innerHTML='<section class="sec"><h2>Error</h2>'+
+      '<div class="err">'+esc(e.message)+'</div>'+
+      '<div class="hint">¿sesión vigente? las APIs storage exigen '+
+      'al menos rol viewer.</div></section>';
+  });
+}
+render();
+</script>
+</body>
+</html>

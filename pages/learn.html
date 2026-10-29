@@ -1,0 +1,222 @@
+<!doctype html>
+<!-- Qom Learn — consola única de formación del equipo (ex LearnTeam):
+     catálogo y cursada del personal + tablero del equipo (evaluaciones,
+     aprobación real) + estado de verificación qVERILINKS. Consume los
+     cursos JSON del directorio de aprendizaje (QOMDEFENDER_LEARN_DIR). -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom Learn</title>
+  <script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --bg:#0b1420; --card:#152233; --card2:#1a2d42; --ink:#d7e3ef;
+  --dim:#7f95ab; --mut:#243447; --acc:#4a7cb0; --warn:#c4a35a; --bad:#c07a7a;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;font-size:13px}
+.wrap{max-width:1100px;margin:0 auto;padding:1.2rem}
+.foot{margin-top:2rem;padding:1rem 0 .4rem;border-top:1px solid var(--mut);
+  color:var(--dim);font-size:.68rem;text-align:center;letter-spacing:.03em}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem}
+.course{background:var(--card);border:1px solid var(--mut);border-radius:8px;
+  padding:1rem;cursor:pointer;transition:border-color .15s}
+.course:hover{border-color:var(--acc)}
+.course h3{margin:.2rem 0 .4rem;font-size:.95rem}
+.course .meta{color:var(--dim);font-size:.7rem}
+.course .desc{color:var(--dim);font-size:.75rem;margin-top:.4rem;line-height:1.4}
+.badge{display:inline-block;background:var(--card2);border:1px solid var(--mut);
+  padding:.1rem .5rem;border-radius:10px;font-size:.65rem;color:var(--acc);
+  margin-right:.3rem}
+.badge.inst{border-color:var(--warn);color:var(--warn)}
+.back{color:var(--acc);cursor:pointer;font-size:.8rem;margin-bottom:1rem;display:inline-block}
+.mod{background:var(--card);border:1px solid var(--mut);border-radius:8px;
+  padding:1rem 1.2rem;margin-bottom:1rem}
+.mod h3{color:var(--acc);margin:.2rem 0 .5rem;font-size:.9rem}
+.mod .body{font-family:ui-sans-serif,system-ui,sans-serif;font-size:.9rem;line-height:1.6}
+.mod .body h3,.mod .body h4{color:var(--ink)}
+.mod .body ul{padding-left:1.2rem}
+.quiz .q{background:var(--card);border:1px solid var(--mut);border-radius:8px;
+  padding:1rem;margin-bottom:.8rem}
+.quiz .q .opts label{display:block;padding:.35rem .5rem;margin:.2rem 0;
+  border:1px solid var(--mut);border-radius:4px;cursor:pointer;font-size:.78rem}
+.quiz .q .opts label:hover{border-color:var(--acc)}
+.quiz .q .opts input{margin-right:.5rem}
+button.act{background:var(--acc);color:#f4f8fc;border:0;padding:.5rem 1.2rem;
+  cursor:pointer;font-family:inherit;font-weight:600;border-radius:4px}
+.result{padding:1rem;border-radius:8px;margin-top:.8rem;font-weight:700;text-align:center}
+.result.pass{background:#0d3320;border:1px solid var(--acc);color:var(--acc)}
+.result.fail{background:#3a1520;border:1px solid var(--bad);color:var(--bad)}
+.empty{color:var(--warn);padding:1rem;border:1px dashed var(--warn);
+  border-radius:6px;text-align:center}
+.err{color:var(--bad);font-size:.75rem}
+video.v{width:100%;border-radius:6px;margin:.5rem 0}
+</style>
+  <link rel="stylesheet" href="/assets/ui-kit.css">
+  <script src="/assets/ui-kit.js" nonce="__CSP_NONCE__"></script>
+</head>
+<body>
+<header>
+  <div class="mark">QL</div>
+  <div>
+    <h1>Qom Learn</h1>
+    <p class="sub">Formación del equipo</p>
+  </div>
+</header>
+<div class="wrap">
+  <div id="uk-strip"></div>
+  <div id="main"></div>
+</div>
+
+<script nonce="__CSP_NONCE__">
+let CATALOG = [];
+
+function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+/* Sanitiza el HTML de los módulos de curso — el JSON viene de archivos
+   del appliance y un editor con acceso podría inyectar contenido
+   malicioso (script, handlers on*, javascript:, iframe). Whitelist:
+   tags de contenido + atributos seguros; fuera scripts/eventos/forms. */
+function sanitizeHtml(html){
+  const t = document.createElement("template");
+  t.innerHTML = html;
+  const DROP = new Set(["SCRIPT","IFRAME","OBJECT","EMBED","FORM","LINK","META","BASE","SVG","MATH"]);
+  const ALLOWED_ATTR = /^((class|id|style|colspan|rowspan|alt|title|width|height)|data-)/i;
+  (function walk(n){
+    for(const el of [...n.children]){
+      if(DROP.has(el.tagName)){ el.remove(); continue; }
+      for(const a of [...el.attributes]){
+        const v = a.value.replace(/\s/g,"");
+        if(a.name.toLowerCase().startsWith("on") || !ALLOWED_ATTR.test(a.name) ||
+           (a.name==="href"||a.name==="src") && /^javascript:/i.test(v)){
+          el.removeAttribute(a.name);
+        }
+      }
+      walk(el);
+    }
+  })(t.content);
+  return t.innerHTML;
+}
+
+async function loadCatalog(){
+  const r = await fetch("/api/v1/learn/courses",{credentials:"same-origin"}).then(r=>r.json());
+  CATALOG = r.courses;
+  // Historial del operador: mejor nota por curso.
+  let attempts = {}, attemptsTotal = 0, attemptsPassed = 0;
+  try{
+    const a = await fetch("/api/v1/learn/attempts",{credentials:"same-origin"}).then(r=>r.json());
+    const al = a.attempts || [];
+    attemptsTotal = al.length;
+    attemptsPassed = al.filter(x => x.passed || x.score_pct >= (x.pass_score || 70)).length;
+    for(const x of al){
+      const cur = attempts[x.course_id];
+      if(!cur || x.score_pct > cur) attempts[x.course_id] = x.score_pct;
+    }
+  }catch(e){}
+  // qVERILINKS absorbido del tablero LearnTeam: conteo del portal de
+  // verificación (la cola de revisión SOC queda en BLUE Team).
+  let sVer = null;
+  try{
+    const v = await fetch("/api/v1/qverilinks/history",{credentials:"same-origin"}).then(r=>r.json());
+    const items = v.items || (Array.isArray(v) ? v : []);
+    const bad = items.filter(i => i.verdict === "suspicious" || i.verdict === "fraudulent");
+    sVer = { total: items.length, bad: bad.length, pending: v.pending_review ?? 0 };
+  }catch(e){}
+  // Tira SaaS: catálogo + tablero del equipo + verificación.
+  const U = window.QomUI;
+  if (U) {
+    const done = Object.keys(attempts).length;
+    const scores = Object.values(attempts);
+    const best = scores.length ? Math.max(...scores) : null;
+    const mods = CATALOG.reduce((a,c)=>a+(c.modules_count||0),0);
+    const appr = attemptsTotal ? Math.round(100 * attemptsPassed / attemptsTotal) : null;
+    const items = [
+      { icon: "book", label: "Cursos", value: CATALOG.length, foot: `${mods} módulos en catálogo` },
+      { icon: "check", tint: "var(--ok)", label: "Cursos rendidos", value: done, foot: done ? "con al menos un intento" : "todavía ninguno" },
+      { ring: best ?? 0, label: "Mejor nota", value: best != null ? best + "%" : "—", foot: "tu mejor intento" },
+      { icon: "users", label: "Institucionales", value: CATALOG.filter(c=>c.is_institutional).length, foot: "del propio tenant" },
+      { ring: appr ?? 0, label: "Aprobación equipo", value: appr != null ? appr + "%" : "—", foot: `${attemptsPassed} de ${attemptsTotal} evaluaciones` },
+    ];
+    if (sVer) items.push(
+      { icon: "link", label: "Verificaciones", value: sVer.total, foot: "enlaces/correos revisados" },
+      { icon: "alert", tint: sVer.bad ? "var(--warn)" : "var(--ok)", label: "Sospechosas", value: sVer.bad, foot: sVer.pending ? sVer.pending + " pendientes de revisión SOC" : "cola al día" },
+    );
+    U.kpis("uk-strip", items);
+  }
+  const errs = (r.errors||[]).map(e=>`<div class="err">⚠ ${esc(e)}</div>`).join("");
+  document.getElementById("main").innerHTML = errs + (
+    CATALOG.length
+    ? `<div class="grid">` + CATALOG.map(c=>`
+        <div class="course" data-id="${esc(c.id)}">
+          <span class="badge">${esc(c.difficulty)}</span>
+          <span class="badge">${esc(c.category)}</span>
+          ${c.is_institutional?'<span class="badge inst">institucional</span>':""}
+          ${attempts[c.id]!=null?`<span class="badge" style="border-color:var(--acc)">mejor: ${attempts[c.id]}%</span>`:""}
+          <h3>${esc(c.title)}</h3>
+          <div class="desc">${esc(c.short_description)}</div>
+          <div class="meta">${c.modules_count} módulos · ${c.duration_minutes} min · ${c.points} pts</div>
+        </div>`).join("") + `</div>`
+    : `<div class="empty">Sin cursos disponibles en ${esc(r.dir)}</div>`);
+  document.querySelectorAll(".course").forEach(el=>el.onclick=()=>openCourse(el.dataset.id));
+}
+
+async function openCourse(id){
+  const c = await fetch(`/api/v1/learn/courses/${id}`,{credentials:"same-origin"}).then(r=>r.json());
+  const mods = (c.modules||[]).map((m,i)=>`
+    <div class="mod">
+      <h3>${i+1}. ${esc(m.title)}</h3>
+      <div style="color:var(--dim);font-size:.72rem">${esc(m.description||"")}</div>
+      ${m.video_url?`<video class="v" controls src="${esc(m.video_url)}"></video>`:""}
+      <div class="body">${sanitizeHtml(m.content||"")}</div>
+      ${(m.activities||[]).length?`<div class="body"><b>Actividades:</b><ul>${
+        m.activities.map(a=>`<li>${esc(typeof a==="string"?a:(a.title||a.description||""))}</li>`).join("")
+      }</ul></div>`:""}
+    </div>`).join("");
+  const quiz = c.quiz && c.quiz.questions ? `
+    <div class="quiz" id="quiz">
+      <h3 style="color:var(--acc)">Evaluación — aprobás con ${c.quiz.passing_score}%</h3>
+      ${c.quiz.questions.map((q,qi)=>`
+        <div class="q"><div>${qi+1}. ${esc(q.text)}</div>
+          <div class="opts">${q.options.map((o,oi)=>`
+            <label><input type="radio" name="q${qi}" value="${oi}">${esc(o)}</label>`).join("")}
+          </div></div>`).join("")}
+      <button class="act" id="grade">Evaluar</button>
+      <div id="result"></div>
+    </div>` : "";
+  document.getElementById("main").innerHTML =
+    `<span class="back" id="back">← volver al catálogo</span>
+     <h2 style="color:var(--acc)">${esc(c.title)}</h2>
+     <div style="color:var(--dim);font-size:.8rem;margin-bottom:1rem">${esc(c.full_description||c.short_description||"")}</div>
+     ${mods}${quiz}`;
+  document.getElementById("back").onclick = loadCatalog;
+  const g = document.getElementById("grade");
+  if(g) g.onclick = ()=>{
+    let ok=0, qs=c.quiz.questions;
+    qs.forEach((q,qi)=>{
+      const sel=document.querySelector(`input[name=q${qi}]:checked`);
+      if(sel && +sel.value===q.correct) ok++;
+    });
+    const pct = Math.round(ok/qs.length*100);
+    const pass = pct >= c.quiz.passing_score;
+    document.getElementById("result").innerHTML =
+      `<div class="result ${pass?"pass":"fail"}">${ok}/${qs.length} — ${pct}% — ${pass?"APROBADO":"Revisá el material y reintentá"}</div>`;
+    // El intento queda registrado por operador (la nota sin tracking
+    // no sirve de nada después de la primera vez).
+    fetch("/api/v1/learn/attempts",{method:"POST", credentials:"same-origin",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({course_id:c.id,score_pct:pct,passed:pass})}).catch(()=>{});
+    window.scrollTo(0,document.body.scrollHeight);
+  };
+  window.scrollTo(0,0);
+}
+
+loadCatalog();
+</script>
+<footer class="foot">Diseñado y programado por @apamar - Sistema operativo de Ciberdefensa *QOM Defender * v.0.1.0 setiembre 2026</footer>
+</body>
+</html>

@@ -1,0 +1,316 @@
+<!doctype html>
+<!-- qom CSPM — postura de configuración cloud (subconjunto CIS).
+
+     Reportes por conector cloud (poller aws/azure/gcp): score, fallas
+     por severidad, controles no verificables y detalle por control con
+     evidencia y remediación. Correr una evaluación es admin (usa las
+     credenciales del conector y hace llamadas salientes); cada corrida
+     queda sellada en la cadena de evidencia.
+
+     Honestidad: el catálogo es un SUBCONJUNTO de CIS Foundations —
+     la pantalla lo dice y nunca muestra "100% cumplido" sin aclarar
+     cobertura. Un `unverifiable` no cuenta como falla ni como pase. -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom CSPM</title>
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --bg:#0b1420; --card:#152233; --card2:#1a2d42; --ink:#d7e3ef;
+  --dim:#7f95ab; --mut:#243447; --acc:#4a7cb0; --warn:#c4a35a; --bad:#c07a7a;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;font-size:13px}
+.wrap{max-width:1150px;margin:0 auto;padding:1.2rem}
+.top{display:flex;justify-content:space-between;align-items:baseline;
+  flex-wrap:wrap;gap:.8rem;margin-bottom:1rem}
+.brand{font-size:1.35rem;font-weight:700}
+.brand em{color:var(--acc);font-style:normal}
+.back{color:var(--acc);text-decoration:none;font-size:.8rem}
+.sec{background:var(--card);border:1px solid var(--mut);border-radius:8px;
+  padding:1rem 1.2rem;margin-bottom:1.2rem}
+.sec h2{margin:.1rem 0 .6rem;font-size:1rem;color:var(--acc)}
+.hint{color:var(--dim);font-size:.72rem;margin-bottom:.8rem;line-height:1.5}
+.row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}
+select{background:var(--card2);border:1px solid var(--mut);color:var(--ink);
+  border-radius:4px;padding:.45rem .7rem;font:inherit}
+button.act{background:var(--acc);color:#f4f8fc;border:0;padding:.5rem 1.2rem;
+  cursor:pointer;font-family:inherit;font-weight:600;border-radius:4px}
+button.ghost{background:none;border:1px solid var(--mut);color:var(--dim);
+  padding:.4rem .9rem;cursor:pointer;font-family:inherit;border-radius:4px}
+button.ghost:hover{border-color:var(--acc);color:var(--acc)}
+button:disabled{opacity:.45;cursor:default}
+.badge{display:inline-block;background:var(--card2);border:1px solid var(--mut);
+  padding:.12rem .55rem;border-radius:10px;font-size:.65rem;color:var(--acc);
+  margin:.15rem .25rem .15rem 0;white-space:nowrap}
+.badge.warn{border-color:var(--warn);color:var(--warn)}
+.badge.bad{border-color:var(--bad);color:var(--bad)}
+.badge.dim{color:var(--dim)}
+table{width:100%;border-collapse:collapse;font-size:.75rem}
+th,td{padding:.4rem .5rem;border-bottom:1px solid var(--mut);text-align:left;vertical-align:top}
+th{color:var(--dim);font-weight:600;font-size:.66rem;text-transform:uppercase;
+  letter-spacing:.05em}
+tr.rep{cursor:pointer}
+tr.rep:hover{background:var(--card2)}
+.score{font-size:1.5rem;font-weight:700;color:var(--acc)}
+.score.mid{color:var(--warn)} .score.low{color:var(--bad)}
+.st-pass{color:var(--acc)} .st-fail{color:var(--bad)} .st-unv{color:var(--warn)}
+.sev-critical{color:var(--bad)} .sev-high{color:#c89060}
+.sev-medium{color:var(--warn)} .sev-low{color:var(--dim)}
+.err{color:var(--bad);font-size:.75rem;margin-top:.5rem}
+.rem{color:var(--dim);font-size:.72rem;margin-top:.3rem;font-family:ui-sans-serif,
+  system-ui,sans-serif;line-height:1.5}
+.ev{background:#101a28;border-radius:4px;padding:.4rem .6rem;margin-top:.3rem;
+  font-size:.68rem;white-space:pre-wrap;word-break:break-all}
+.admin-only{display:none}
+.detail{background:var(--card2);border:1px solid var(--mut);border-radius:6px;
+  padding:.8rem;margin-top:.8rem}
+.foot{margin-top:2rem;padding:1rem 0 .4rem;border-top:1px solid var(--mut);
+  color:var(--dim);font-size:.68rem;text-align:center;letter-spacing:.03em}
+</style>
+  <link rel="stylesheet" href="/assets/ui-kit.css">
+  <script src="/assets/ui-kit.js" nonce="__CSP_NONCE__"></script>
+</head>
+<body>
+<header>
+  <div class="mark">QM</div>
+  <h1>Qom CSPM</h1>
+  <a class="back" href="/">← Live</a>
+</header>
+<div class="wrap">
+
+  <div id="uk-strip"></div>
+
+  <section class="sec">
+    <h2>Postura cloud por conector</h2>
+    <div class="hint">
+      Evalúa la configuración de cada cuenta/subscripción/proyecto contra un
+      <b>subconjunto de CIS Foundations</b> (no es el benchmark completo).
+      Un control sin datos suficientes queda <b>no verificable</b> — no cuenta
+      como falla ni como pase. Cada corrida sella el digest del reporte en la
+      cadena de evidencia y emite un evento SIEM por falla.
+    </div>
+    <div class="row admin-only"  style="margin-bottom:.8rem">
+      <select id="connsel"></select>
+      <button class="act" id="run">Correr evaluación</button>
+      <span id="runerr" class="err"></span>
+    </div>
+    <div id="reports"><div class="hint">cargando…</div></div>
+    <div id="detail"></div>
+  </section>
+
+  <section class="sec">
+    <h2>Catálogo de controles</h2>
+    <div class="hint">Controles declarativos embebidos en el firmware.
+      Extender el catálogo es documentación-operativa (<code>docs/cspm.md</code>).</div>
+    <div class="row" style="margin-bottom:.6rem">
+      <button class="ghost cloudf" data-c="">todas</button>
+      <button class="ghost cloudf" data-c="aws">AWS</button>
+      <button class="ghost cloudf" data-c="azure">Azure</button>
+      <button class="ghost cloudf" data-c="gcp">GCP</button>
+    </div>
+    <table>
+      <thead><tr><th>Control</th><th>Nube</th><th>Severidad</th><th>CIS</th><th>MITRE</th></tr></thead>
+      <tbody id="catrows"><tr><td colspan="5" class="hint">cargando…</td></tr></tbody>
+    </table>
+  </section>
+
+  <div class="foot">qom Defender OS · posture cloud auditada · sin telemetría inventada</div>
+</div>
+
+<script nonce="__CSP_NONCE__">
+"use strict";
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function api(path, opts){
+  opts = opts || {};
+  opts.credentials = "same-origin";
+  if (opts.body && typeof opts.body !== "string") {
+    opts.headers = {"Content-Type":"application/json"};
+    opts.body = JSON.stringify(opts.body);
+  }
+  return fetch(path, opts).then(function(r){
+    return r.json().catch(function(){return {};}).then(function(j){
+      if (!r.ok) {
+        var e = new Error(j.error || ("HTTP " + r.status));
+        e.status = r.status; throw e;
+      }
+      return j;
+    });
+  });
+}
+function post(path, body){ return api(path, {method:"POST", body: body || {}}); }
+function short(s){ return s ? esc(String(s).slice(0,12)) + "…" : "—"; }
+
+var ROLE = "viewer";
+var CATALOG = [];
+var CLOUDF = "";
+
+fetch("/api/v1/me", {credentials:"same-origin"}).then(function(r){
+  return r.ok ? r.json() : null;
+}).then(function(me){
+  ROLE = (me && me.role) || "viewer";
+  if (ROLE === "admin") {
+    document.querySelectorAll(".admin-only").forEach(function(el){
+      el.classList.remove("admin-only"); });
+    loadConnectors();
+  }
+  loadOverview();
+});
+
+function loadConnectors(){
+  api("/api/v1/connectors").then(function(s){
+    var sel = document.getElementById("connsel");
+    var cloud = (s.connectors || []).filter(function(c){
+      return /^(aws|azure|gcp)_poll$/.test(c.kind || "");
+    });
+    sel.innerHTML = cloud.length
+      ? cloud.map(function(c){
+          return '<option value="' + esc(c.name) + '">' + esc(c.name) +
+            " (" + esc(c.kind.replace("_poll","")) + ")</option>";
+        }).join("")
+      : '<option value="">sin pollers cloud</option>';
+  }).catch(function(){});
+}
+
+function loadOverview(){
+  api("/api/v1/cspm").then(function(r){
+    CATALOG = r.catalog || [];
+    renderCatalog();
+    var reps = r.reports || [];
+    // Tira SaaS: postura cloud en números, honesta sobre lo no verificable.
+    var U = window.QomUI;
+    if (U) {
+      var totFail = 0, totUnv = 0, lastScore = null;
+      reps.forEach(function(rp){
+        var s = rp.summary || {};
+        totFail += s.fail || 0;
+        totUnv += s.unverifiable || 0;
+        if (lastScore == null) lastScore = s.score_pct;
+      });
+      var cards = [
+        { icon: "grid", label: "Controles CIS", value: CATALOG.length, foot: "subconjunto Foundations" },
+        { icon: "doc", label: "Evaluaciones", value: reps.length, foot: reps.length ? "digest sellado en evidencia" : "sin corridas aún" },
+      ];
+      if (lastScore != null) cards.push(
+        { ring: lastScore, label: "Último score", value: lastScore + "%", foot: "reporte más reciente" });
+      cards.push(
+        { icon: "alert", tint: totFail ? "var(--bad)" : "var(--ok)", label: "Fallas", value: totFail, foot: totUnv + " no verificables" });
+      U.kpis("uk-strip", cards);
+    }
+    if (!reps.length) {
+      document.getElementById("reports").innerHTML =
+        '<div class="hint">sin reportes — corré una evaluación sobre un poller cloud (admin)</div>';
+      return;
+    }
+    document.getElementById("reports").innerHTML = '<table><thead><tr>' +
+      "<th>Conector</th><th>Nube</th><th>Scope</th><th>Fecha</th>" +
+      "<th>Score</th><th>Pass</th><th>Fail</th><th>No verificable</th><th>Evidencia</th>" +
+      "</tr></thead><tbody>" + reps.map(function(r){
+        var s = r.summary || {};
+        var sc = s.score_pct;
+        var cls = sc == null ? "" : sc >= 80 ? "score" : sc >= 50 ? "score mid" : "score low";
+        var fbs = s.fail_by_severity || {};
+        var sevs = Object.keys(fbs).map(function(k){
+          return '<span class="badge ' + (k==="critical"||k==="high"?"bad":"warn") + '">' +
+            esc(k) + "×" + fbs[k] + "</span>"; }).join("");
+        return '<tr class="rep" data-c="' + esc(r.connector) + '">' +
+          "<td><b>" + esc(r.connector) + "</b></td>" +
+          "<td>" + esc(r.cloud) + "</td>" +
+          "<td>" + esc(r.scope || "—") + "</td>" +
+          "<td>" + esc((r.generated_at||"").slice(0,19).replace("T"," ")) + "</td>" +
+          '<td><span class="' + cls + '">' + (sc == null ? "—" : sc + "%") + "</span><br>" + sevs + "</td>" +
+          "<td class='st-pass'>" + (s.pass||0) + "</td>" +
+          "<td class='st-fail'>" + (s.fail||0) + "</td>" +
+          "<td class='st-unv'>" + (s.unverifiable||0) + "</td>" +
+          "<td title='" + esc(r.evidence_id||"") + "'>" + short(r.evidence_id) + "</td>" +
+          "</tr>";
+      }).join("") + "</tbody></table>";
+    document.querySelectorAll("tr.rep").forEach(function(tr){
+      tr.onclick = function(){ showReport(tr.getAttribute("data-c")); };
+    });
+  }).catch(function(e){
+    document.getElementById("reports").innerHTML =
+      '<div class="err">' + esc(e.message) + "</div>";
+  });
+}
+
+function showReport(conn){
+  var d = document.getElementById("detail");
+  d.innerHTML = '<div class="hint">cargando reporte…</div>';
+  api("/api/v1/cspm/report?connector=" + encodeURIComponent(conn)).then(function(r){
+    var res = r.results || [];
+    var order = {fail:0, unverifiable:1, pass:2};
+    res = res.slice().sort(function(a,b){
+      return (order[a.status]||3) - (order[b.status]||3); });
+    d.innerHTML = '<div class="detail"><b>' + esc(conn) + "</b> — " +
+      esc(r.cloud) + " · " + esc(r.scope || "") +
+      ' <span class="badge dim">' + esc(r.generated_at||"") + "</span>" +
+      ' <span class="badge">digest sellado ' + short(r.report_sha256) + "</span>" +
+      (r.tenant ? ' <span class="badge dim">tenant ' + esc(r.tenant) + "</span>" : "") +
+      '<table style="margin-top:.7rem"><thead><tr>' +
+      "<th></th><th>Control</th><th>Severidad</th><th>CIS</th><th>MITRE</th>" +
+      "</tr></thead><tbody>" + res.map(function(c){
+        var icon = c.status === "fail" ? '<span class="st-fail">✗ fail</span>'
+                 : c.status === "pass" ? '<span class="st-pass">✓ pass</span>'
+                 : '<span class="st-unv">? no verificable</span>';
+        var extra = "";
+        if (c.reason) extra += '<div class="rem">' + esc(c.reason) + "</div>";
+        if (c.status === "fail" && c.remediation)
+          extra += '<div class="rem"><b>Remediación:</b> ' + esc(c.remediation) + "</div>";
+        if (c.evidence && c.evidence.length)
+          extra += '<div class="ev">' + esc(JSON.stringify(c.evidence, null, 1)) + "</div>";
+        return "<tr><td>" + icon + "</td><td><b>" + esc(c.id) + "</b> " +
+          esc(c.title) + extra + "</td>" +
+          '<td class="sev-' + esc(c.severity) + '">' + esc(c.severity) + "</td>" +
+          "<td>" + esc(c.cis || "—") + "</td>" +
+          "<td>" + esc((c.mitre||[]).join(", ")) + "</td></tr>";
+      }).join("") + "</tbody></table></div>";
+  }).catch(function(e){
+    d.innerHTML = '<div class="err">' + esc(e.message) + "</div>";
+  });
+}
+
+document.getElementById("run").onclick = function(){
+  var conn = document.getElementById("connsel").value;
+  var err = document.getElementById("runerr"); err.textContent = "";
+  if (!conn) { err.textContent = "elegí un poller cloud"; return; }
+  this.disabled = true;
+  var b = this;
+  err.style.color = "var(--dim)";
+  err.textContent = "evaluando… (puede tardar: consulta las APIs de la nube)";
+  post("/api/v1/cspm/run", {connector: conn}).then(function(){
+    err.style.color = "var(--acc)";
+    err.textContent = "evaluación completa — reporte sellado en evidencia";
+    loadOverview();
+  }).catch(function(e){
+    err.style.color = "var(--bad)";
+    err.textContent = e.message;
+  }).finally(function(){ b.disabled = false; });
+};
+
+function renderCatalog(){
+  var rows = CATALOG.filter(function(c){
+    return !CLOUDF || c.cloud === CLOUDF;
+  }).map(function(c){
+    return "<tr><td><b>" + esc(c.id) + "</b> " + esc(c.title) + "</td>" +
+      "<td>" + esc(c.cloud) + "</td>" +
+      '<td class="sev-' + esc(c.severity) + '">' + esc(c.severity) + "</td>" +
+      "<td>" + esc(c.cis || "—") + "</td>" +
+      "<td>" + esc((c.mitre||[]).join(", ")) + "</td></tr>";
+  });
+  document.getElementById("catrows").innerHTML = rows.length ? rows.join("")
+    : '<tr><td colspan="5" class="hint">sin controles</td></tr>';
+}
+document.querySelectorAll(".cloudf").forEach(function(b){
+  b.onclick = function(){ CLOUDF = b.getAttribute("data-c"); renderCatalog(); };
+});
+</script>
+</body>
+</html>

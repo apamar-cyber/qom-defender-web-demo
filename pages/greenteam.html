@@ -1,0 +1,173 @@
+<!doctype html>
+<!-- GreenTeam — pantalla de operación/salud del sistema. Dos tiles:
+     "Pipeline de datos" (Qom Data + Analyze) y "Salud del sistema"
+     (Statistics + Flow + cadena/spool/backup). Cada tile muestra KPIs
+     en vivo y abre UNA sola pantalla completa — el monitor del equipo
+     solo accede a dos pantallas desde acá. -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom GreenTeam</title>
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --bg:#0b1420; --card:#152233; --card2:#1a2d42; --ink:#d7e3ef;
+  --dim:#7f95ab; --mut:#243447; --acc:#4a7cb0; --ok:#6aa88a; --warn:#c4a35a; --bad:#c07a7a;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;font-size:13px}
+.wrap{max-width:1100px;margin:0 auto;padding:1.2rem}
+.top{display:flex;justify-content:space-between;align-items:center;
+  flex-wrap:wrap;gap:.8rem;margin-bottom:1.2rem}
+.brand{font-size:1.35rem;font-weight:700}
+.brand em{color:var(--acc);font-style:normal}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));
+  gap:1rem}
+.tile{background:var(--card);border:1px solid var(--mut);border-radius:8px;
+  padding:1rem 1.2rem;display:flex;flex-direction:column;min-height:220px}
+.tile h3{color:var(--acc);margin:.1rem 0 .3rem;font-size:.95rem}
+.tile .sub{color:var(--dim);font-size:.68rem;margin-bottom:.7rem}
+.kpis{flex:1}
+.kpi{display:flex;justify-content:space-between;padding:.3rem 0;
+  border-bottom:1px dashed var(--mut);font-size:.75rem}
+.kpi:last-child{border-bottom:0}
+.kpi .k{color:var(--dim)}
+.kpi .v{font-weight:700}
+.kpi .v.ok{color:var(--ok,#6aa88a)} .kpi .v.warn{color:var(--warn)}
+.kpi .v.bad{color:var(--bad)}
+.tile a.open{color:var(--acc);text-decoration:none;font-size:.78rem;
+  margin-top:.8rem;font-weight:700}
+.tile a.open:hover{text-decoration:underline}
+.err{color:var(--dim);font-size:.72rem;font-style:italic}
+.note{color:var(--dim);font-size:.7rem;margin-top:1rem;line-height:1.5}
+</style>
+  <link rel="stylesheet" href="/assets/ui-kit.css">
+  <script src="/assets/ui-kit.js" nonce="__CSP_NONCE__"></script>
+</head>
+<body>
+<header>
+  <div class="mark">QG</div>
+  <h1>Qom GreenTeam</h1>
+</header>
+<div class="wrap">
+
+  <div id="uk-strip"></div>
+
+  <div class="grid">
+    <div class="tile">
+      <h3>Pipeline de datos</h3>
+      <div class="sub">Qom Data (lakehouse bronze/silver/gold) + motor Analyze</div>
+      <div class="kpis" id="kPipe"><div class="err">consultando…</div></div>
+      <a class="open" href="/qomdata/" target="_blank" rel="noopener">Abrir Qom Data →</a>
+    </div>
+
+    <div class="tile">
+      <h3>Salud del sistema</h3>
+      <div class="sub">Statistics + Data Flow + cadena de evidencia, spool y backup</div>
+      <div class="kpis" id="kSalud"><div class="err">consultando…</div></div>
+      <a class="open" href="/dataflow/" target="_blank" rel="noopener">Abrir Data Flow →</a>
+    </div>
+  </div>
+
+  <p class="note">Dos destinos: consola de datos y pantalla de flujo.
+  Lo demás se resume acá — sellado, spool, backup y clasificación.
+  Actualización automática cada 30 s.</p>
+</div>
+
+<script nonce="__CSP_NONCE__">
+const el = id => document.getElementById(id);
+const sevClass = s => s === "critical" || s === "high" ? "bad"
+  : s === "warn" || s === "medium" ? "warn" : "ok";
+const fmt = n => n == null ? "—" : Number(n).toLocaleString("es-AR");
+function rows(id, pairs){
+  el(id).innerHTML = pairs.map(([k, v, c]) =>
+    `<div class="kpi"><span class="k">${k}</span><span class="v ${c||""}">${v}</span></div>`).join("");
+}
+function ageTxt(s){
+  if (s == null || s < 0) return "sin eslabones";
+  if (s < 120) return `hace ${s} s`;
+  if (s < 7200) return `hace ${Math.round(s / 60)} min`;
+  return `hace ${Math.round(s / 3600)} h`;
+}
+function promVal(text, name){
+  let sum = 0, seen = false;
+  for (const line of text.split("\n")) {
+    if (!line || line.startsWith("#")) continue;
+    const sp = line.indexOf(" ");
+    if (sp < 0) continue;
+    const m = line.slice(0, sp).replace(/\{.*/, "");
+    if (m === name) { sum += parseFloat(line.slice(sp + 1)) || 0; seen = true; }
+  }
+  return seen ? sum : null;
+}
+
+async function poll(){
+  // Pipeline de datos: qom-data metrics + analyze suite
+  const [met, an] = await Promise.all([
+    fetch("/qomdata/metrics", { credentials: "same-origin" }).then(r => r.text()).catch(() => ""),
+    fetch("/api/suite?id=analyze", { credentials: "same-origin" }).then(r => r.json()).catch(() => null),
+  ]);
+  if (met || an) {
+    const comps = an && (Array.isArray(an.components) ? an.components.length
+      : Array.isArray(an.modules) ? an.modules.length : null);
+    rows("kPipe", [
+      ["puntos en buffer", fmt(promVal(met, "qom_data_buffer_points"))],
+      ["puntos únicos", fmt(promVal(met, "qom_data_dedup_unique_total"))],
+      ["anomalías", fmt(promVal(met, "qom_data_anomalies_detected_total")),
+        (promVal(met, "qom_data_anomalies_detected_total") || 0) > 0 ? "warn" : "ok"],
+      ["lotes transmitidos", fmt(promVal(met, "qom_data_transmit_batches_total"))],
+      ["analyze", an ? String(an.status || an.state || "en línea") : "sin datos"],
+      ["componentes analyze", comps == null ? "—" : fmt(comps)],
+    ]);
+  } else {
+    el("kPipe").innerHTML = '<div class="err">sin datos</div>';
+  }
+
+  // Salud: statistics + dataflow + evidencia/spool/backup
+  const [st, fl, ev, rec] = await Promise.all([
+    fetch("/api/v1/statistics?days=1", { credentials: "same-origin" }).then(r => r.json()).catch(() => null),
+    fetch("/api/v1/dataflow", { credentials: "same-origin" }).then(r => r.json()).catch(() => null),
+    fetch("/api/evidence", { credentials: "same-origin" }).then(r => r.json()).catch(() => null),
+    fetch("/api/v1/recoverability", { credentials: "same-origin" }).then(r => r.json()).catch(() => null),
+  ]);
+  const sd = st && st.denominator || {};
+  rows("kSalud", [
+    ["eventos 24h", fmt(sd.events_total)],
+    ["eventos/min", fl ? fmt(fl.events_60s) : "—"],
+    ["alertas/min", fl ? fmt(fl.alerts_60s) : "—",
+      fl && fl.alerts_60s ? "warn" : "ok"],
+    ["severidad pico", fl ? (fl.worst_severity || "ok") : "—",
+      fl ? sevClass(fl.worst_severity) : ""],
+    ["último sello", ev ? ageTxt(ev.last_seal_age_secs) : "—",
+      ev && ev.last_seal_age_secs >= 0 && ev.last_seal_age_secs < 600 ? "ok" : "warn"],
+    ["eslabones", ev ? fmt(ev.len) : "—"],
+    ["backup RPO", rec == null ? "—"
+      : rec.rpo_seconds == null || rec.rpo_seconds < 0 ? "nunca corrió"
+      : `hace ${Math.round(rec.rpo_seconds / 60)} min`],
+  ]);
+
+  // Tira SaaS de resumen — mismo idioma visual que Live.
+  const U = window.QomUI;
+  if (U) {
+    const sd2 = st && st.denominator || {};
+    const sealed = ev && ev.last_seal_age_secs >= 0 && ev.last_seal_age_secs < 600;
+    U.kpis("uk-strip", [
+      { icon: "db", label: "Puntos en buffer", value: fmt(promVal(met, "qom_data_buffer_points")), foot: "qom-data lakehouse" },
+      { icon: "pulse", label: "Eventos 24 h", value: fmt(sd2.events_total), foot: fl ? fmt(fl.events_60s) + " eventos/min" : "sin flujo" },
+      { icon: "alert", tint: fl && fl.alerts_60s ? "var(--bad)" : "var(--ok)", label: "Alertas/min", value: fl ? fmt(fl.alerts_60s) : "—", foot: "pico: " + (fl ? (fl.worst_severity || "ok") : "—") },
+      { icon: "shield", tint: sealed ? "var(--ok)" : "var(--warn)", label: "Cadena sellada", value: ev ? ageTxt(ev.last_seal_age_secs) : "—", foot: ev ? fmt(ev.len) + " eslabones" : "sin datos" },
+      { icon: "clock", label: "Backup RPO", value: rec == null ? "—" : rec.rpo_seconds == null || rec.rpo_seconds < 0 ? "nunca" : Math.round(rec.rpo_seconds / 60) + " min", foot: "recuperabilidad" },
+    ]);
+  }
+}
+poll();
+setInterval(poll, 30000);
+</script>
+</body>
+</html>

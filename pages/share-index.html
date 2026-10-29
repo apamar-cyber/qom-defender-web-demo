@@ -1,0 +1,99 @@
+<!doctype html>
+<!-- qom Share — panel.
+
+     KPIs del file manager: archivos, usuarios, cambios de hoy,
+     almacenamiento y alertas pendientes (incidentes HITL). Todo
+     viene de /api/v1/share/stats + /activity + /alerts — nada
+     inventado: si el share está off, el panel lo dice. -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom Share — Panel</title>
+<link rel="stylesheet" href="/assets/share-ui.css">
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<script src="/assets/share-ui.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Panel</h1>
+<div class="sui-sub">Archivos compartidos de la intranet, con papelera
+  sellada y detección de comportamiento.</div>
+<div class="sui-msg" id="msg"></div>
+<div class="sui-cards" id="cards"></div>
+<h2>Alertas activas</h2>
+<div class="sui-panel" id="alerts"></div>
+<h2>Actividad reciente</h2>
+<div class="sui-panel" id="recent"></div>
+<script defer nonce="__CSP_NONCE__">
+document.addEventListener("DOMContentLoaded", async () => {
+  const main = ShareUI.layout("dashboard");
+  const msg = document.getElementById("msg");
+  const render = async () => {
+    try {
+      const st = await ShareUI.api("/api/v1/share/stats");
+      const cards = [
+        [st.files, "archivos"],
+        [st.users, "usuarios"],
+        [st.changes_today, "cambios hoy"],
+        [ShareUI.fmtBytes(st.bytes) + (st.quota_bytes ? ` / ${ShareUI.fmtBytes(st.quota_bytes)}` : ""), "almacenamiento"],
+        [st.active_alerts, "alertas", st.active_alerts > 0 ? "warn" : ""],
+        [st.trash?.entries ?? "—", "en papelera"],
+      ];
+      document.getElementById("cards").innerHTML = cards
+        .map(([v, l, cls]) => `<div class="sui-card ${cls || ""}"><b>${v}</b><span>${l}</span></div>`)
+        .join("");
+    } catch (e) {
+      ShareUI.msg(msg, `stats: ${e.message}`, "err");
+    }
+    try {
+      const { alerts } = await ShareUI.api("/api/v1/share/alerts");
+      const pending = alerts.filter((a) => a.status === "pending");
+      document.getElementById("alerts").innerHTML = pending.length
+        ? pending.map((a) => `
+          <div class="sui-ev">
+            <span class="sui-badge ${a.severity === "critical" ? "bad" : "warn"}">${ShareUI.esc(a.severity)}</span>
+            <span class="who">${ShareUI.esc(a.user)}</span>
+            <span class="pth">${ShareUI.esc(a.detail)}</span>
+            <time>${ShareUI.fmtTime(a.ts)}</time>
+          </div>`).join("")
+        : `<span class="sui-mut">sin alertas pendientes — los incidentes se
+           deciden en <a href="/share/ui/activity.html" style="color:var(--acc)">Actividad</a>
+           o por la API HITL</span>`;
+    } catch (e) {
+      document.getElementById("alerts").innerHTML =
+        `<span class="sui-mut">alerts: ${ShareUI.esc(e.message)}</span>`;
+    }
+    try {
+      const { events } = await ShareUI.api("/api/v1/share/activity?limit=15");
+      document.getElementById("recent").innerHTML = events.length
+        ? events.map((ev) => `
+          <div class="sui-ev">
+            <time>${ShareUI.fmtTime(ev.ts)}</time>
+            <span class="who">${ShareUI.esc(ev.user)}</span>
+            <span class="sui-badge acc">${ShareUI.esc(ev.op)}</span>
+            <span class="pth">${ShareUI.esc(ev.path)}</span>
+          </div>`).join("")
+        : `<span class="sui-mut">sin actividad registrada todavía</span>`;
+    } catch (e) {
+      document.getElementById("recent").innerHTML =
+        `<span class="sui-mut">activity: ${ShareUI.esc(e.message)}</span>`;
+    }
+  };
+  // Barra de refresco.
+  const bar = document.createElement("div");
+  bar.className = "sui-row";
+  bar.style.marginBottom = "1rem";
+  bar.innerHTML = `<button class="sui-btn" id="ref">refrescar</button>
+    <span class="sui-mut" id="ts"></span>`;
+  main.insertBefore(bar, document.getElementById("cards"));
+  document.getElementById("ref").onclick = () => { render(); ShareUI.refreshStatus(); };
+  await render();
+  document.getElementById("ts").textContent =
+    `actualizado ${new Date().toLocaleTimeString()}`;
+});
+</script>
+</body>
+</html>

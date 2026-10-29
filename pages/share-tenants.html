@@ -1,0 +1,131 @@
+<!doctype html>
+<!-- qom Share — tenants (aislamiento por organización).
+
+     Cada tenant es una organización con espacio de archivos propio
+     (share_root/tenants/<id>/): sus usuarios quedan confinados a ese
+     directorio — no pueden listar, leer, escribir ni restaurar fuera.
+     Lo que garantiza el daemon: confinamiento de path + ACL + cuota +
+     auditoría sellada (intento cruzado → 403 + sello). Lo que NO
+     garantiza: separación física/cifrada — un volumen por tenant
+     (btrfs/LUKS montado en tenants/<id>) es capa del instalador. -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom Share — Tenants</title>
+<link rel="stylesheet" href="/assets/share-ui.css">
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<script src="/assets/share-ui.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Tenants</h1>
+<div class="sui-sub">Aislamiento por organización: los usuarios de un
+  tenant quedan confinados a su propio espacio de archivos. El
+  intento de acceso cruzado queda sellado en la cadena de evidencia.
+  La separación física/cifrada por tenant (volumen propio montado en
+  <code>tenants/&lt;id&gt;</code>) la provisión el instalador — no el
+  daemon.</div>
+<div class="sui-msg" id="msg"></div>
+<div class="sui-panel">
+  <h3>alta de tenant</h3>
+  <div class="sui-row">
+    <input class="sui-input" id="nid" placeholder="id (a-z0-9-)" style="width:160px">
+    <input class="sui-input" id="nname" placeholder="nombre visible" style="width:220px">
+    <input class="sui-input" id="nquota" placeholder="cuota bytes (opcional)" style="width:170px">
+    <input class="sui-input" id="nfolders" placeholder="carpetas: A,B,C (opcional)" style="width:220px">
+    <button class="sui-btn primary" id="create">crear</button>
+  </div>
+</div>
+<table class="sui-table">
+  <thead><tr><th>tenant</th><th>nombre</th><th>usuarios</th>
+    <th>archivos</th><th>uso / cuota</th><th>clave</th><th>alta</th><th></th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<script defer nonce="__CSP_NONCE__">
+document.addEventListener("DOMContentLoaded", () => {
+  ShareUI.layout("tenants");
+  const msg = document.getElementById("msg");
+  const rows = document.getElementById("rows");
+
+  const load = async () => {
+    try {
+      const { tenants } = await ShareUI.api("/api/v1/share/tenants");
+      rows.innerHTML = tenants.length ? tenants.map((t) => `<tr>
+        <td><b>${ShareUI.esc(t.id)}</b></td>
+        <td>${ShareUI.esc(t.name)}</td>
+        <td>${t.users}</td>
+        <td>${t.files}</td>
+        <td class="sui-mut">${ShareUI.fmtBytes(t.bytes)}${t.quota_bytes ? " / " + ShareUI.fmtBytes(t.quota_bytes) : ""}</td>
+        <td class="sui-mut" title="fingerprint de la clave derivada (HKDF org_key → tenant) — verifica el enrolamiento LUKS del volumen sin exponerla">${t.key_fingerprint ? `<code>${ShareUI.esc(t.key_fingerprint)}</code>` : "—"}</td>
+        <td class="sui-mut">${ShareUI.fmtTime(t.created_at)}</td>
+        <td style="white-space:nowrap">
+          <a data-b="${ShareUI.esc(t.id)}">archivos</a> ·
+          <a data-e="${ShareUI.esc(t.id)}">editar</a> ·
+          <a data-x="${ShareUI.esc(t.id)}" style="color:var(--bad)">eliminar</a></td>
+      </tr>`).join("") : `<tr><td colspan="8" class="sui-mut">
+        sin tenants — todo el share es un espacio global único;
+        crear un tenant reparte usuarios y archivos por
+        organización</td></tr>`;
+      document.querySelectorAll("a[data-x]").forEach((a) =>
+        (a.onclick = () => del(a.dataset.x)));
+      document.querySelectorAll("a[data-e]").forEach((a) =>
+        (a.onclick = () => edit(a.dataset.e)));
+      document.querySelectorAll("a[data-b]").forEach((a) =>
+        (a.onclick = () =>
+          (location.href = `/share/ui/files.html?tenant=${encodeURIComponent(a.dataset.b)}`)));
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  document.getElementById("create").onclick = async () => {
+    const id = document.getElementById("nid").value.trim();
+    const name = document.getElementById("nname").value.trim();
+    const quota = parseInt(document.getElementById("nquota").value) || null;
+    const folders = document.getElementById("nfolders").value
+      .split(",").map((s) => s.trim()).filter(Boolean);
+    if (!id || !name) {
+      ShareUI.msg(msg, "id y nombre son obligatorios", "err");
+      return;
+    }
+    try {
+      await ShareUI.api("/api/v1/share/tenants", {
+        method: "POST",
+        body: JSON.stringify({ id, name, quota_bytes: quota, folders }),
+      });
+      ShareUI.msg(msg, `tenant ${id} creado — asigná usuarios desde la pestaña Usuarios`, "ok");
+      load();
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  const edit = async (id) => {
+    const name = prompt(`Nombre visible de ${id} (vacío = sin cambio):`);
+    const quota = prompt(`Cuota en bytes (vacío = sin cambio, "0" = quitar):`);
+    const body = {};
+    if (name) body.name = name;
+    if (quota !== null && quota !== "") body.quota_bytes = parseInt(quota) || null;
+    if (!Object.keys(body).length) return;
+    try {
+      await ShareUI.api(`/api/v1/share/tenants/${encodeURIComponent(id)}`,
+        { method: "PUT", body: JSON.stringify(body) });
+      ShareUI.msg(msg, `${id} actualizado`, "ok");
+      load();
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  const del = async (id) => {
+    if (!confirm(`¿Eliminar el tenant ${id}? Solo si está vacío y sin usuarios.`)) return;
+    try {
+      await ShareUI.api(`/api/v1/share/tenants/${encodeURIComponent(id)}`,
+        { method: "DELETE" });
+      ShareUI.msg(msg, `${id} eliminado`, "ok");
+      load();
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  load();
+});
+</script>
+</body>
+</html>

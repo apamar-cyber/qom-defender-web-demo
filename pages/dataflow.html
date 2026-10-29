@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qom Data Flow — QOM Defender</title>
+  <script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<style>
+  :root {
+    --bg: #0b1420; --card: #152233; --line: #243447;
+    --text: #d7e3ef; --muted: #7f95ab; --acc: #4a7cb0;
+    --ok: #6aa88a; --warn: #c4a35a; --high: #c07a7a; --bad: #c07a7a; --info: #5a8fc0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13.5px/1.42 "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; overflow-x: hidden; }
+  header { display: flex; align-items: center; gap: .45rem; padding: 0 .7rem;
+    background: rgba(11, 20, 32, .88); border-bottom: 1px solid var(--line); }
+  .mark { width: 18px; height: 18px; border-radius: 4px; background: var(--acc);
+    display: flex; align-items: center; justify-content: center; font-weight: 700; color: #f4f8fc; font-size: .5rem; }
+  header h1 { font-size: .78rem; margin: 0; letter-spacing: .02em; font-weight: 650; }
+  header .sub { color: var(--muted); font-size: .8rem; margin: 0; }
+  header .right { margin-left: auto; display: flex; gap: 1.2rem; align-items: center;
+    color: var(--muted); font-size: .85rem; }
+  .chip { padding: .18rem .5rem; border-radius: var(--radius, 4px); font-weight: 650; font-size: .72rem;
+    text-transform: uppercase; letter-spacing: .04em; border: 1px solid var(--line); }
+  .chip.ok { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
+  .chip.warn, .chip.medium { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
+  .chip.high { background: color-mix(in srgb, var(--high) 16%, transparent); color: var(--high); border-color: color-mix(in srgb, var(--high) 35%, var(--line)); }
+  .chip.critical { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); }
+  #cv { display: block; width: 100%; height: 62vh; }
+  .legend { display: flex; gap: 1rem; justify-content: center; padding: .3rem 0;
+    font-size: .72rem; color: var(--muted); }
+  .legend span::before { content: "●"; margin-right: .3rem; }
+  .legend .l-ok { color: var(--ok); } .legend .l-warn { color: var(--warn); }
+  .legend .l-bad { color: var(--bad); } .legend .l-acc { color: var(--acc); }
+  #top { max-width: 1100px; margin: .4rem auto 1.5rem; padding: 0 1rem; }
+  #top h2 { font-size: .95rem; color: var(--acc); margin: .4rem 0 .5rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: .72rem;
+    text-transform: uppercase; letter-spacing: .06em; padding: .35rem .5rem;
+    border-bottom: 1px solid var(--line); }
+  td { padding: .35rem .5rem; border-bottom: 1px solid rgba(30,58,77,.5); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .sev { font-weight: 600; }
+  .sev.ok { color: var(--ok); } .sev.medium, .sev.warn { color: var(--warn); }
+  .sev.high { color: var(--high); } .sev.critical { color: var(--bad); }
+  .empty { text-align: center; color: var(--muted); padding: 2.5rem 1rem; font-size: 1rem; }
+  .foot { border-top: 1px solid var(--line); color: var(--muted);
+    font-size: .68rem; text-align: center; padding: .9rem 0 .4rem; letter-spacing: .03em; }
+</style>
+  <link rel="stylesheet" href="/assets/ui-kit.css">
+  <script src="/assets/ui-kit.js" nonce="__CSP_NONCE__"></script>
+</head>
+<body>
+<header>
+  <div class="mark">QD</div>
+  <h1>Qom Data Flow</h1>
+  <div class="right">
+    <span id="eps">— eps</span>
+    <span class="chip ok" id="sev">OK</span>
+    <span id="clock"></span>
+  </div>
+</header>
+
+<div id="uk-strip" style="padding:0 1rem;max-width:1500px;margin:.4rem auto 0"></div>
+<p class="hint" style="max-width:1100px;margin:.5rem auto .2rem;padding:0 1rem;color:var(--muted);font-size:.78rem;line-height:1.45">
+  Muro de gerencia del menú <b>Infraestructura</b>: zonas de origen → núcleo QOM Defender → resultados
+  (alerta / contención / evidencia). Tasas reales de <code>GET /api/v1/dataflow</code> cada pocos segundos —
+  si no hay eventos se muestra «en reposo», nunca ceros inventados. Severidad del chip = peor severidad
+  vista en la ventana de 60&nbsp;s.
+</p>
+<canvas id="cv"></canvas>
+
+<div class="legend">
+  <span class="l-acc">flujo procesado</span>
+  <span class="l-ok">sin incidentes</span>
+  <span class="l-warn">alerta media</span>
+  <span class="l-bad">alerta alta/crítica</span>
+</div>
+
+<div id="top">
+  <h2>Top flujos — últimos 60 segundos</h2>
+  <p class="hint" style="color:var(--muted);font-size:.72rem;margin:0 0 .5rem">Pares origen→destino con más volumen en la ventana. Usalo para ver qué zona satura el pipeline o dispara alertas.</p>
+  <table><thead><tr><th>Origen</th><th>Destino</th><th style="text-align:right">Eventos</th><th>Severidad</th></tr></thead>
+  <tbody id="flows"></tbody></table>
+  <p class="empty" id="empty" style="display:none">Sin eventos en los últimos 60 segundos — el appliance está en reposo (no es un fallo: no hay tráfico que clasificar ahora).</p>
+</div>
+<footer class="foot">qom Defender OS · Data Flow · Infraestructura · sin datos inventados</footer>
+
+<script nonce="__CSP_NONCE__">
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function sessToken() {
+  const s = sessionStorage.getItem("qom_session");
+  if (s) return s;
+  const m = document.cookie.match(/(?:^|;\s*)qom_session=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+async function j(url, opt) {
+  const headers = Object.assign({ "content-type": "application/json" }, (opt && opt.headers) || {});
+  const s = sessToken();
+  if (s) headers.Authorization = "Bearer " + s;
+  const r = await fetch(url, Object.assign({ credentials: "same-origin" }, opt || {}, { headers }));
+  const t = await r.json().catch(() => ({ error: r.statusText }));
+  if (r.status === 401) throw new Error("sesión requerida — iniciá sesión en la consola QOM Defender");
+  if (!r.ok) throw new Error(t.error || r.statusText);
+  return t;
+}
+
+const SEV_COLOR = { ok: "#6aa88a", info: "#5a8fc0", low: "#6aa88a", medium: "#c4a35a", warn: "#c4a35a", high: "#c89060", critical: "#c07a7a" };
+const sevColor = (s) => SEV_COLOR[s] || SEV_COLOR.ok;
+
+// ---- modelo -----------------------------------------------------------------
+let model = { zones: [], outcomes: [], edges: [] };
+let pulses = []; // {edge, t, speed, color, r}
+
+const cv = $("cv"), ctx = cv.getContext("2d");
+function resize() {
+  cv.width = cv.clientWidth * devicePixelRatio;
+  cv.height = cv.clientHeight * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+window.addEventListener("resize", resize); resize();
+
+function layout(d) {
+  const W = cv.clientWidth, H = cv.clientHeight;
+  const zones = d.zones || [], outcomes = d.outcomes || [];
+  const pad = 24, colY = 40;
+  const zoneNodes = [];
+  const totZ = Math.max(1, zones.reduce((a, z) => a + z.events, 0));
+  let y = colY;
+  zones.forEach((z) => {
+    const h = Math.max(34, (H - colY - pad) * (z.events / totZ) * 0.85);
+    zoneNodes.push({ name: z.name, count: z.events, x: pad, y, w: 170, h });
+    y += h + 14;
+  });
+  const core = { name: "QOM DEFENDER", x: W / 2 - 90, y: H / 2 - 55, w: 180, h: 110 };
+  const totO = Math.max(1, outcomes.reduce((a, o) => a + o.count, 0));
+  const outNodes = [];
+  y = colY;
+  outcomes.forEach((o) => {
+    const h = Math.max(34, (H - colY - pad) * (o.count / totO) * 0.85);
+    outNodes.push({ name: o.name, count: o.count, severity: o.severity, x: W - pad - 170, y, w: 170, h });
+    y += h + 14;
+  });
+  // edges zone→core y core→outcome
+  const edges = [];
+  const maxZ = Math.max(1, ...zones.map((z) => z.events));
+  zoneNodes.forEach((zn) => {
+    const t = zn.count / maxZ;
+    edges.push({ a: { x: zn.x + zn.w, y: zn.y + zn.h / 2 }, b: { x: core.x, y: core.y + core.h / 2 },
+      w: 2 + t * 14, color: "#5a8fc0", rate: zn.count, name: zn.name });
+  });
+  const maxO = Math.max(1, ...outcomes.map((o) => o.count));
+  outNodes.forEach((on) => {
+    const t = on.count / maxO;
+    edges.push({ a: { x: core.x + core.w, y: core.y + core.h / 2 }, b: { x: on.x, y: on.y + on.h / 2 },
+      w: 2 + t * 14, color: sevColor(on.severity), rate: on.count, name: on.name });
+  });
+  model = { zones: zoneNodes, core, outcomes: outNodes, edges };
+  pulses = pulses.filter((p) => p.edge < edges.length);
+}
+
+function bez(e, t) {
+  // bezier cúbica horizontal
+  const cx1 = e.a.x + (e.b.x - e.a.x) * 0.45, cy1 = e.a.y;
+  const cx2 = e.a.x + (e.b.x - e.a.x) * 0.55, cy2 = e.b.y;
+  const u = 1 - t;
+  return {
+    x: u*u*u*e.a.x + 3*u*u*t*cx1 + 3*u*t*t*cx2 + t*t*t*e.b.x,
+    y: u*u*u*e.a.y + 3*u*u*t*cy1 + 3*u*t*t*cy2 + t*t*t*e.b.y,
+  };
+}
+
+function node(n, label2) {
+  ctx.fillStyle = "#152233";
+  ctx.strokeStyle = "#243447";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(n.x, n.y, n.w, n.h, 10);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#d7e3ef";
+  ctx.font = "600 13px system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText(n.name, n.x + n.w / 2, n.y + n.h / 2 - 2);
+  ctx.fillStyle = "#7f95ab";
+  ctx.font = "11px system-ui";
+  ctx.fillText(label2, n.x + n.w / 2, n.y + n.h / 2 + 14);
+}
+
+function draw() {
+  const W = cv.clientWidth, H = cv.clientHeight;
+  ctx.clearRect(0, 0, W, H);
+  if (!model.core) return;
+  // bandas
+  model.edges.forEach((e) => {
+    ctx.beginPath();
+    ctx.moveTo(e.a.x, e.a.y);
+    ctx.bezierCurveTo(e.a.x + (e.b.x - e.a.x) * .45, e.a.y, e.a.x + (e.b.x - e.a.x) * .55, e.b.y, e.b.x, e.b.y);
+    ctx.strokeStyle = e.color + "33";
+    ctx.lineWidth = e.w + 6;
+    ctx.lineCap = "round";
+    ctx.stroke();
+    ctx.strokeStyle = e.color + "88";
+    ctx.lineWidth = Math.max(1.5, e.w * 0.45);
+    ctx.stroke();
+  });
+  // pulsos
+  pulses.forEach((p) => {
+    const e = model.edges[p.edge];
+    if (!e) return;
+    const pt = bez(e, p.t);
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 3.2, 0, Math.PI * 2);
+    ctx.fillStyle = e.color;
+    ctx.shadowColor = e.color; ctx.shadowBlur = 8;
+    ctx.fill(); ctx.shadowBlur = 0;
+  });
+  // nodos
+  model.zones.forEach((z) => node(z, `${z.count} ev/60s`));
+  node(model.core, "ingesta · correlación · decisión");
+  model.outcomes.forEach((o) => node(o, `${o.count} ev/60s`));
+}
+
+function tick() {
+  // spawn de pulsos proporcional al volumen (máx ~1 pulso por 3 ev/60s por edge)
+  model.edges.forEach((e, i) => {
+    const want = Math.min(30, Math.ceil(e.rate / 3));
+    const have = pulses.filter((p) => p.edge === i).length;
+    if (have < want && Math.random() < 0.12) {
+      pulses.push({ edge: i, t: 0, speed: 0.006 + Math.random() * 0.008 });
+    }
+  });
+  pulses.forEach((p) => (p.t += p.speed));
+  pulses = pulses.filter((p) => p.t <= 1);
+  draw();
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+// ---- datos ------------------------------------------------------------------
+async function refresh() {
+  $("clock").textContent = new Date().toLocaleTimeString();
+  let d;
+  try {
+    d = await j("/api/v1/dataflow");
+  } catch (e) {
+    $("empty").style.display = "block";
+    $("empty").textContent = "No se pudo leer el flujo: " + (e.message || e);
+    return;
+  }
+  layout(d);
+  $("eps").textContent = `${d.eps ?? 0} ev/s`;
+  const chip = $("sev");
+  const w = d.worst_severity || "ok";
+  chip.className = "chip " + (w === "ok" ? "ok" : w === "medium" || w === "warn" ? "warn" : w === "high" ? "high" : "critical");
+  chip.textContent = w === "ok" ? "OK" : w.toUpperCase();
+  const flows = d.top_flows || [];
+  $("empty").style.display = (d.events_60s || 0) === 0 ? "block" : "none";
+  $("flows").innerHTML = flows.map((f) => `<tr>
+    <td>${esc(f.from)}</td><td>${esc(f.to)}</td>
+    <td class="num">${f.count}</td>
+    <td class="sev ${esc(f.severity)}">${esc(f.severity)}</td></tr>`).join("");
+  // Tira SaaS: los mismos números del muro, arriba del canvas.
+  const U = window.QomUI;
+  if (U) {
+    const wcol = w === "ok" ? "var(--ok)" : w === "medium" || w === "warn" ? "var(--warn)" : "var(--bad)";
+    U.kpis("uk-strip", [
+      { icon: "pulse", label: "Eventos/s", value: d.eps ?? 0, foot: "último segundo real" },
+      { icon: "grid", label: "Eventos 60 s", value: d.events_60s ?? 0, foot: "ventana de un minuto" },
+      { icon: "alert", tint: d.alerts_60s ? "var(--warn)" : "var(--ok)", label: "Alertas 60 s", value: d.alerts_60s ?? 0, foot: "en la misma ventana" },
+      { icon: "shield", tint: wcol, label: "Severidad pico", value: w.toUpperCase(), foot: "peor evento observado" },
+      { icon: "link", label: "Flujos top", value: flows.length, foot: flows.length ? "mayor: " + (flows[0].from || "?") + " → " + (flows[0].to || "?") : "sin flujos" },
+    ]);
+  }
+}
+refresh();
+setInterval(refresh, 2000);
+</script>
+<footer class="foot">Diseñado y programado por @apamar - Sistema operativo de Ciberdefensa *QOM Defender * v.0.1.0 setiembre 2026</footer>
+</body>
+</html>

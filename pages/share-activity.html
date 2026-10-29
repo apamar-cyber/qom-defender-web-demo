@@ -1,0 +1,116 @@
+<!doctype html>
+<!-- qom Share — actividad.
+
+     Feed en tiempo real: EventSource sobre /api/v1/share/activity/stream
+     (SSE). Si el stream no está disponible o corta, cae a polling de
+     /api/v1/share/activity cada 10s — el modo se muestra, sin
+     pretender tiempo real que no hay. -->
+<html lang="es">
+<head>
+  <script src="../mock-api.js"></script>
+
+<meta charset="utf-8">
+<title>qom Share — Actividad</title>
+<link rel="stylesheet" href="/assets/share-ui.css">
+<script src="/assets/nav.js" defer nonce="__CSP_NONCE__"></script>
+<script src="/assets/share-ui.js" defer nonce="__CSP_NONCE__"></script>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<h1>Actividad</h1>
+<div class="sui-sub" id="mode">feed de operaciones de archivo</div>
+<div class="sui-msg" id="msg"></div>
+<div class="sui-row" style="margin-bottom:.9rem">
+  <input class="sui-input" id="fuser" placeholder="usuario" style="width:140px">
+  <select class="sui-select" id="fop">
+    <option value="">todas las ops</option>
+    <option>create</option><option>modify</option><option>read</option>
+    <option>delete</option><option>rename</option>
+    <option>permissions_change</option><option>restore</option><option>purge</option>
+  </select>
+  <button class="sui-btn" id="apply">filtrar</button>
+  <button class="sui-btn" id="pause">pausar</button>
+  <span class="sui-mut" id="feed-state"></span>
+</div>
+<div class="sui-panel" id="feed" style="max-height:70vh;overflow-y:auto"></div>
+<script defer nonce="__CSP_NONCE__">
+document.addEventListener("DOMContentLoaded", () => {
+  ShareUI.layout("activity");
+  const feed = document.getElementById("feed");
+  const msg = document.getElementById("msg");
+  const state = document.getElementById("feed-state");
+  let paused = false;
+  let seen = new Set();
+  let es = null;
+  let poll = null;
+
+  const params = () => {
+    const u = document.getElementById("fuser").value.trim();
+    const o = document.getElementById("fop").value;
+    const q = new URLSearchParams({ limit: "200" });
+    if (u) q.set("user", u);
+    if (o) q.set("op", o);
+    return q.toString();
+  };
+
+  const row = (ev) => {
+    const key = ev.id ?? `${ev.ts}|${ev.user}|${ev.op}|${ev.path}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const div = document.createElement("div");
+    div.className = "sui-ev";
+    div.innerHTML = `<time>${ShareUI.fmtTime(ev.ts)}</time>
+      <span class="who">${ShareUI.esc(ev.user)}</span>
+      <span class="sui-badge acc">${ShareUI.esc(ev.op)}</span>
+      <span class="pth">${ShareUI.esc(ev.path)}</span>
+      <span class="sui-mut">${ShareUI.esc(ev.ip || ev.source_ip || "")} ${ShareUI.esc(ev.protocol || "")}</span>`;
+    feed.prepend(div);
+    while (feed.children.length > 400) feed.lastChild.remove();
+  };
+
+  const backfill = async () => {
+    try {
+      const { events } = await ShareUI.api(`/api/v1/share/activity?${params()}`);
+      events.forEach(row);
+      if (!events.length) feed.innerHTML =
+        `<span class="sui-mut">sin eventos con esos filtros</span>`;
+    } catch (e) { ShareUI.msg(msg, e.message, "err"); }
+  };
+
+  const startSse = () => {
+    state.textContent = "conectando stream…";
+    es = new EventSource("/api/v1/share/activity/stream");
+    es.onopen = () => {
+      state.textContent = "en vivo (SSE)";
+      document.getElementById("mode").textContent =
+        "feed en tiempo real — cada operación aparece al ocurrir";
+    };
+    es.onmessage = (m) => {
+      if (paused) return;
+      try { row(JSON.parse(m.data)); } catch { /* keep-alive */ }
+    };
+    es.addEventListener("resync", () => backfill());
+    es.onerror = () => {
+      // El backend no tiene stream o la conexión cayó — polling honesto.
+      if (es) { es.close(); es = null; }
+      state.textContent = "polling 10s (stream no disponible)";
+      document.getElementById("mode").textContent =
+        "feed por polling — el stream no está disponible en este despliegue";
+      if (!poll) poll = setInterval(() => { if (!paused) backfill(); }, 10000);
+    };
+  };
+
+  document.getElementById("apply").onclick = () => {
+    feed.innerHTML = ""; seen = new Set(); backfill();
+  };
+  document.getElementById("pause").onclick = (ev) => {
+    paused = !paused;
+    ev.target.textContent = paused ? "reanudar" : "pausar";
+  };
+  backfill();
+  startSse();
+});
+</script>
+</body>
+</html>
